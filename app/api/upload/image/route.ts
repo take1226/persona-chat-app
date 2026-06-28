@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { getAI, VISION_MODEL } from '@/lib/gemini'
 import { createServerClient } from '@/lib/supabase'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData()
@@ -24,27 +22,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: uploadError.message }, { status: 500 })
   }
 
-  // Claude Vision でOCR（LINE / Instagram DMのスクショを想定）
   const base64 = buffer.toString('base64')
-  const mediaType = file.type as 'image/jpeg' | 'image/png' | 'image/webp'
 
   let rawText = ''
   let confidence = 0.5
 
   try {
-    const ocrResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
-      messages: [{
+    const ocrResponse = await getAI().models.generateContent({
+      model: VISION_MODEL,
+      contents: [{
         role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: mediaType, data: base64 },
-          },
-          {
-            type: 'text',
-            text: `このスクリーンショットはLINEまたはInstagramのDMのトーク画面です。
+        parts: [
+          { inlineData: { mimeType: file.type, data: base64 } },
+          { text: `このスクリーンショットはLINEまたはInstagramのDMのトーク画面です。
 テキストメッセージをすべて抽出してください。
 
 以下の形式のJSONのみ出力してください（前後の説明不要）:
@@ -53,25 +43,21 @@ export async function POST(req: NextRequest) {
     { "sender": "相手" or "自分", "text": "メッセージ内容", "timestamp": "時刻（あれば）" }
   ],
   "confidence": 0.0〜1.0
-}`,
-          },
+}` },
         ],
       }],
     })
 
-    const content = ocrResponse.content[0]
-    if (content.type === 'text') {
-      const cleaned = content.text.replace(/```json|```/g, '').trim()
-      const parsed = JSON.parse(cleaned)
-      rawText = JSON.stringify(parsed.messages)
-      confidence = parsed.confidence ?? 0.5
-    }
+    const content = ocrResponse.text ?? ''
+    const cleaned = content.replace(/```json|```/g, '').trim()
+    const parsed = JSON.parse(cleaned)
+    rawText = JSON.stringify(parsed.messages)
+    confidence = parsed.confidence ?? 0.5
   } catch {
     rawText = ''
     confidence = 0
   }
 
-  // DB に保存
   const { data, error: dbError } = await supabase
     .from('upload_sources')
     .insert({
