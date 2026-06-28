@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAI, VISION_MODEL } from '@/lib/gemini'
+import { visionOCR } from '@/lib/ai-client'
 import { createServerClient } from '@/lib/supabase'
 
 export async function POST(req: NextRequest) {
@@ -28,27 +28,7 @@ export async function POST(req: NextRequest) {
   let confidence = 0.5
 
   try {
-    const ocrResponse = await getAI().models.generateContent({
-      model: VISION_MODEL,
-      contents: [{
-        role: 'user',
-        parts: [
-          { inlineData: { mimeType: file.type, data: base64 } },
-          { text: `このスクリーンショットはLINEまたはInstagramのDMのトーク画面です。
-テキストメッセージをすべて抽出してください。
-
-以下の形式のJSONのみ出力してください（前後の説明不要）:
-{
-  "messages": [
-    { "sender": "相手" or "自分", "text": "メッセージ内容", "timestamp": "時刻（あれば）" }
-  ],
-  "confidence": 0.0〜1.0
-}` },
-        ],
-      }],
-    })
-
-    const content = ocrResponse.text ?? ''
+    const content = await visionOCR(base64, file.type)
     const cleaned = content.replace(/```json|```/g, '').trim()
     const parsed = JSON.parse(cleaned)
     rawText = JSON.stringify(parsed.messages)

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAI, MODEL } from '@/lib/gemini'
+import { generate } from '@/lib/ai-client'
 import { createServerClient } from '@/lib/supabase'
 
 export async function POST(req: NextRequest) {
@@ -21,12 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'アップロードされた履歴がありません' }, { status: 400 })
   }
 
-  const analysisResponse = await getAI().models.generateContent({
-    model: MODEL,
-    config: { maxOutputTokens: 4000 },
-    contents: [{
-      role: 'user',
-      parts: [{ text: `以下はある人物（「対象者」）のトーク履歴です。対象者の発言パターンを分析して、その人を模倣するためのプロフィールをJSONで出力してください。
+  const prompt = `以下はある人物（「対象者」）のトーク履歴です。対象者の発言パターンを分析して、その人を模倣するためのプロフィールをJSONで出力してください。
 
 【プロフィール】
 ${JSON.stringify(profile, null, 2)}
@@ -43,15 +38,13 @@ ${combinedText.substring(0, 15000)}
   "reply_style": { "length": "短文/中文/長文", "speed": "返信速度の傾向" },
   "emotional_patterns": "感情表現の特徴",
   "system_prompt": "この人物を演じるためのシステムプロンプト（500字程度、一人称で書く）"
-}` }],
-    }],
-  })
+}`
 
   let analysis: Record<string, unknown> = {}
   let systemPrompt = `あなたは${profile.name}として振る舞ってください。`
 
   try {
-    const text = analysisResponse.text ?? ''
+    const text = await generate(prompt, 4000)
     analysis = JSON.parse(text.replace(/```json|```/g, '').trim())
     systemPrompt = analysis.system_prompt as string ?? systemPrompt
   } catch { /* fallback */ }

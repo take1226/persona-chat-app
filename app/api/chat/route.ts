@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAI, MODEL } from '@/lib/gemini'
+import { chat, decideImageIndex } from '@/lib/ai-client'
 import { createServerClient } from '@/lib/supabase'
 
 export async function POST(req: NextRequest) {
@@ -26,8 +26,8 @@ export async function POST(req: NextRequest) {
     .limit(20)
 
   const history = (recentMessages ?? []).reverse().map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content ?? '[画像を送信]' }],
+    role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+    content: m.content ?? '[画像を送信]',
   }))
 
   // 3. ユーザーメッセージを保存
@@ -49,22 +49,7 @@ export async function POST(req: NextRequest) {
   let imageToSend = null
 
   if (images && images.length > 0) {
-    const imageCheckResponse = await getAI().models.generateContent({
-      model: MODEL,
-      contents: [{
-        role: 'user',
-        parts: [{ text: `今の会話の流れで画像を送るべきか判断してください。
-
-【ユーザーのメッセージ】: ${user_message}
-
-【利用可能な画像】:
-${images.map((img, i) => `${i}: category=${img.category}, description=${img.description}`).join('\n')}
-
-画像を送るべきであれば番号(0〜${images.length - 1})を、送らなければ "none" を返してください。数字か "none" のみ。` }],
-      }],
-    })
-
-    const decision = (imageCheckResponse.text ?? 'none').trim()
+    const decision = await decideImageIndex(user_message, images)
 
     if (decision !== 'none') {
       const idx = parseInt(decision)
@@ -81,19 +66,7 @@ ${images.map((img, i) => `${i}: category=${img.category}, description=${img.desc
   // 5. AI テキスト返答生成
   const systemPrompt = persona.system_prompt ?? `あなたは${persona.name}として自然に会話してください。`
 
-  const aiResponse = await getAI().models.generateContent({
-    model: MODEL,
-    config: {
-      systemInstruction: systemPrompt,
-      maxOutputTokens: 500,
-    },
-    contents: [
-      ...history,
-      { role: 'user', parts: [{ text: user_message }] },
-    ],
-  })
-
-  const replyText = aiResponse.text ?? ''
+  const replyText = await chat(systemPrompt, history, user_message, 500)
 
   // 6. 返答を保存
   await supabase.from('messages').insert({

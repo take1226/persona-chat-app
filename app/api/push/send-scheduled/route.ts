@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAI, MODEL } from '@/lib/gemini'
+import { chat } from '@/lib/ai-client'
 import { createServerClient } from '@/lib/supabase'
 import { sendPushToAll } from '@/lib/push'
 
@@ -45,8 +45,8 @@ export async function GET(req: NextRequest) {
       .limit(10)
 
     const history = (recentMessages ?? []).reverse().map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content ?? '[画像]' }],
+      role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+      content: m.content ?? '[画像]',
     }))
 
     const lastMessageTime = recentMessages?.[0]?.created_at
@@ -65,17 +65,8 @@ export async function GET(req: NextRequest) {
 
     let autoMessage = ''
     try {
-      const response = await getAI().models.generateContent({
-        model: MODEL,
-        config: {
-          systemInstruction: systemPrompt,
-          maxOutputTokens: 200,
-        },
-        contents: history.length > 0
-          ? [...history, { role: 'user', parts: [{ text: '（しばらく時間が経ちました）' }] }]
-          : [{ role: 'user', parts: [{ text: '（久しぶりに連絡します）' }] }],
-      })
-      autoMessage = response.text ?? ''
+      const triggerMsg = history.length > 0 ? '（しばらく時間が経ちました）' : '（久しぶりに連絡します）'
+      autoMessage = await chat(systemPrompt, history, triggerMsg, 200)
     } catch {
       continue
     }
