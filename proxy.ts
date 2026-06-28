@@ -4,9 +4,8 @@ import type { NextRequest } from 'next/server'
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // 認証不要なパスをスキップ
   if (
-    pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/') ||
     pathname.startsWith('/_next') ||
     pathname === '/login' ||
     pathname === '/sw.js' ||
@@ -21,13 +20,17 @@ export function proxy(request: NextRequest) {
 
   const auth = request.cookies.get('app_auth')?.value
   if (!auth || auth !== process.env.APP_PASSWORD) {
-    // リダイレクトではなくrewrite（URLを変えずにログインページを表示）
-    const loginUrl = request.nextUrl.clone()
-    loginUrl.pathname = '/login'
-    return NextResponse.rewrite(loginUrl)
+    const loginUrl = new URL('/login', request.url)
+    const res = NextResponse.redirect(loginUrl, { status: 302 })
+    // CDNにキャッシュさせない
+    res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate')
+    return res
   }
 
-  return NextResponse.next()
+  const res = NextResponse.next()
+  // 認証済みページもCDNにキャッシュさせない（cookieの有無で内容が変わるため）
+  res.headers.set('Cache-Control', 'no-store, private')
+  return res
 }
 
 export const config = {

@@ -9,13 +9,15 @@ export default function LoginPage() {
   async function handleLogin() {
     if (!password) return
     setLoading(true)
+    setError('')
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password }),
     })
     if (res.ok) {
-      window.location.replace('/')
+      // タイムスタンプでCDNキャッシュをバイパスしてホームへ
+      window.location.href = '/?_=' + Date.now()
     } else {
       setError('パスワードが違います')
       setLoading(false)
