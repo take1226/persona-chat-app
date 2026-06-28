@@ -15,7 +15,7 @@ export default function LoginPage() {
       body: JSON.stringify({ password }),
     })
     if (res.ok) {
-      window.location.href = '/'
+      window.location.replace('/')
     } else {
       setError('パスワードが違います')
       setLoading(false)

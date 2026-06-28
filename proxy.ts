@@ -21,9 +21,8 @@ export function proxy(request: NextRequest) {
 
   const auth = request.cookies.get('app_auth')?.value
   if (!auth || auth !== process.env.APP_PASSWORD) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+    const loginUrl = new URL('/login', request.url)
+    return NextResponse.redirect(loginUrl, { status: 302 })
   }
 
   return NextResponse.next()

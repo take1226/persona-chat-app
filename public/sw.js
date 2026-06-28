@@ -1,5 +1,26 @@
-// public/sw.js
-// iPhone Safari の Web Push (iOS 16.4+) に対応したService Worker
+// Service Worker v2
+// キャッシュをすべて削除（古いSWのキャッシュが残っている場合に備える）
+
+const CACHE_NAME = 'persona-chat-v2';
+
+self.addEventListener('install', function(event) {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', function(event) {
+  event.waitUntil(
+    caches.keys().then(function(cacheNames) {
+      return Promise.all(
+        cacheNames.map(function(cacheName) {
+          // 古いキャッシュをすべて削除
+          return caches.delete(cacheName);
+        })
+      );
+    }).then(function() {
+      return self.clients.claim();
+    })
+  );
+});
 
 self.addEventListener('push', function(event) {
   if (!event.data) return;
@@ -15,8 +36,8 @@ self.addEventListener('push', function(event) {
     body: data.body || '',
     icon: data.icon || '/icon-192.png',
     badge: '/badge-72.png',
-    tag: data.persona_id || 'message',       // 同じペルソナの通知はまとめる
-    renotify: true,                           // 同じtag でも毎回鳴らす
+    tag: data.persona_id || 'message',
+    renotify: true,
     data: {
       url: data.url || '/',
       persona_id: data.persona_id,
@@ -34,24 +55,14 @@ self.addEventListener('notificationclick', function(event) {
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      // すでに開いているタブがあればフォーカス
       for (const client of clientList) {
         if (client.url.includes(url) && 'focus' in client) {
           return client.focus();
         }
       }
-      // なければ新しいタブで開く
       if (clients.openWindow) {
         return clients.openWindow(url);
       }
     })
   );
-});
-
-self.addEventListener('install', function() {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', function(event) {
-  event.waitUntil(self.clients.claim());
 });
