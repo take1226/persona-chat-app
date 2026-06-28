@@ -1,25 +1,32 @@
 'use client'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const router = useRouter()
 
   async function handleLogin() {
     if (!password) return
     setLoading(true)
     setError('')
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
-    })
-    if (res.ok) {
-      // タイムスタンプでCDNキャッシュをバイパスしてホームへ
-      window.location.href = '/?_=' + Date.now()
-    } else {
-      setError('パスワードが違います')
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
+      if (res.ok) {
+        router.push('/')
+        router.refresh()
+      } else {
+        setError('パスワードが違います')
+      }
+    } catch {
+      setError('エラーが発生しました')
+    } finally {
       setLoading(false)
     }
   }
@@ -27,7 +34,7 @@ export default function LoginPage() {
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center',
-      justifyContent: 'center', minHeight: '100vh', background: '#f0f0f0',
+      justifyContent: 'center', minHeight: '100dvh', background: '#f0f0f0',
       fontFamily: 'system-ui, sans-serif', gap: 16,
     }}>
       <div style={{
@@ -35,7 +42,7 @@ export default function LoginPage() {
         boxShadow: '0 4px 24px rgba(0,0,0,0.08)', minWidth: 280,
         display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center',
       }}>
-        <div style={{ fontSize: 40, marginBottom: 4 }}>💬</div>
+        <div style={{ fontSize: 40 }}>💬</div>
         <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
           {process.env.NEXT_PUBLIC_APP_NAME || 'トークアプリ'}
         </h1>
@@ -50,6 +57,7 @@ export default function LoginPage() {
             borderRadius: 10, fontSize: 16, boxSizing: 'border-box' as const,
           }}
           autoFocus
+          disabled={loading}
         />
         {error && <p style={{ color: '#e53e3e', fontSize: 13, margin: 0 }}>{error}</p>}
         <button
