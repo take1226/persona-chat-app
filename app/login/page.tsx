@@ -1,12 +1,10 @@
 'use client'
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
 
   async function handleLogin() {
     if (!password) return
@@ -17,7 +15,7 @@ export default function LoginPage() {
       body: JSON.stringify({ password }),
     })
     if (res.ok) {
-      router.push('/')
+      window.location.href = '/'
     } else {
       setError('パスワードが違います')
       setLoading(false)

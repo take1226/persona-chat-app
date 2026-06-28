@@ -4,14 +4,17 @@ import type { NextRequest } from 'next/server'
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // 認証・静的ファイル・Service Worker は除外
+  // 認証不要なパスをスキップ
   if (
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/_next') ||
     pathname === '/login' ||
     pathname === '/sw.js' ||
+    pathname === '/manifest.json' ||
+    pathname === '/favicon.ico' ||
     pathname.startsWith('/icon') ||
-    pathname.startsWith('/badge')
+    pathname.startsWith('/badge') ||
+    pathname.startsWith('/apple')
   ) {
     return NextResponse.next()
   }
