@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -v -L --max-redirs 10 https://persona-chat-app-azure.vercel.app/)",
+      "Bash(node -e ' *)"
+    ]
+  }
+}
