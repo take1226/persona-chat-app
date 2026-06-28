@@ -21,8 +21,10 @@ export function proxy(request: NextRequest) {
 
   const auth = request.cookies.get('app_auth')?.value
   if (!auth || auth !== process.env.APP_PASSWORD) {
-    const loginUrl = new URL('/login', request.url)
-    return NextResponse.redirect(loginUrl, { status: 302 })
+    // リダイレクトではなくrewrite（URLを変えずにログインページを表示）
+    const loginUrl = request.nextUrl.clone()
+    loginUrl.pathname = '/login'
+    return NextResponse.rewrite(loginUrl)
   }
 
   return NextResponse.next()
