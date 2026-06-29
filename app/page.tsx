@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { db } from '@/lib/firebase'
-import { collection, getDocs, query, orderBy, where, limit, Timestamp } from 'firebase/firestore'
+import { collection, getDocs, query, orderBy, onSnapshot, limit, Timestamp } from 'firebase/firestore'
 
 type Persona = {
   id: string
@@ -19,34 +19,36 @@ export default function HomePage() {
   const router = useRouter()
 
   useEffect(() => {
-    loadPersonas()
-  }, [])
-
-  async function loadPersonas() {
-    try {
-      const snap = await getDocs(query(collection(db, 'personas'), orderBy('updated_at', 'desc')))
-      const withMessages = await Promise.all(snap.docs.map(async (d) => {
-        const data = d.data() as {
-          name: string; profile: { relationship?: string }; auto_message_enabled: boolean
-        }
-        const msgSnap = await getDocs(
-          query(collection(db, 'personas', d.id, 'messages'), orderBy('created_at', 'desc'), limit(1))
-        )
-        const lastDoc = msgSnap.docs[0]
-        const lastData = lastDoc?.data() as { content?: string; message_type?: string; created_at?: Timestamp } | undefined
-        const preview = lastData?.message_type === 'image' ? '[画像]' : (lastData?.content ?? '').substring(0, 30)
-        const timeStr = lastData?.created_at
-          ? lastData.created_at.toDate().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
-          : ''
-        return { id: d.id, ...data, lastMessage: preview, lastMessageTime: timeStr }
-      }))
-      setPersonas(withMessages)
-    } catch (err) {
-      console.error('Failed to load personas:', err)
-    } finally {
+    const q = query(collection(db, 'personas'), orderBy('updated_at', 'desc'))
+    const unsubscribe = onSnapshot(q, async (snap) => {
+      try {
+        const withMessages = await Promise.all(snap.docs.map(async (d) => {
+          const data = d.data() as {
+            name: string; profile: { relationship?: string }; auto_message_enabled: boolean
+          }
+          const msgSnap = await getDocs(
+            query(collection(db, 'personas', d.id, 'messages'), orderBy('created_at', 'desc'), limit(1))
+          )
+          const lastDoc = msgSnap.docs[0]
+          const lastData = lastDoc?.data() as { content?: string; message_type?: string; created_at?: Timestamp } | undefined
+          const preview = lastData?.message_type === 'image' ? '[画像]' : (lastData?.content ?? '').substring(0, 30)
+          const timeStr = lastData?.created_at
+            ? lastData.created_at.toDate().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+            : ''
+          return { id: d.id, ...data, lastMessage: preview, lastMessageTime: timeStr }
+        }))
+        setPersonas(withMessages)
+      } catch (err) {
+        console.error('Failed to load personas:', err)
+      } finally {
+        setLoading(false)
+      }
+    }, (err) => {
+      console.error('Personas snapshot error:', err)
       setLoading(false)
-    }
-  }
+    })
+    return () => unsubscribe()
+  }, [])
 
   const s = {
     page: { display: 'flex', flexDirection: 'column' as const, height: '100dvh', background: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
