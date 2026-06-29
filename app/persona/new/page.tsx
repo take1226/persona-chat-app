@@ -16,173 +16,200 @@ export default function NewPersonaPage() {
   const [statusMsg, setStatusMsg] = useState('')
 
   async function createPersona() {
-    const { data, error } = await supabaseClient
-      .from('personas')
-      .insert({
-        name: profile.name,
-        profile,
-        auto_message_enabled: true,
-        auto_message_interval_min: 5,
-        auto_message_interval_max: 30,
-      })
-      .select()
-      .single()
-    if (error || !data) { alert('作成失敗: ' + error?.message); return }
-    setPersonaId(data.id)
-    setStep('upload')
+    if (!profile.name) return
+    try {
+      const { data, error } = await supabaseClient
+        .from('personas')
+        .insert({
+          name: profile.name,
+          profile,
+          auto_message_enabled: true,
+          auto_message_interval_min: 5,
+          auto_message_interval_max: 30,
+        })
+        .select()
+        .single()
+      if (error || !data) throw error
+      setPersonaId(data.id)
+      setStep('upload')
+    } catch (err) {
+      alert(`作成失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
   }
 
   async function handleFileUpload(files: FileList | null) {
     if (!files || !personaId) return
     setUploading(true)
-    for (const file of Array.from(files)) {
-      const isImage = file.type.startsWith('image/')
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('persona_id', personaId)
-      if (isImage) {
-        formData.append('source_type', 'screenshot')
-        setStatusMsg(`OCR処理中: ${file.name}`)
-        await fetch('/api/upload/image', { method: 'POST', body: formData })
-      } else {
-        formData.append('source_type', 'text')
-        setStatusMsg(`テキスト処理中: ${file.name}`)
-        await fetch('/api/upload/text', { method: 'POST', body: formData })
+    try {
+      for (const file of Array.from(files)) {
+        const isImage = file.type.startsWith('image/')
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('persona_id', personaId)
+
+        if (isImage) {
+          formData.append('source_type', 'screenshot')
+          setStatusMsg(`OCR処理中: ${file.name}`)
+        } else {
+          formData.append('source_type', 'text')
+          setStatusMsg(`テキスト処理中: ${file.name}`)
+        }
+
+        const endpoint = isImage ? '/api/upload/image' : '/api/upload/text'
+        const res = await fetch(endpoint, { method: 'POST', body: formData })
+        if (!res.ok) throw new Error(`Upload failed: ${file.name}`)
+        setUploadCount(c => c + 1)
       }
-      setUploadCount(c => c + 1)
+    } catch (err) {
+      alert(`アップロード失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setUploading(false)
+      setStatusMsg('')
     }
-    setUploading(false)
-    setStatusMsg('')
   }
 
   async function generatePersona() {
     if (!personaId) return
     setGenerating(true)
     setStatusMsg('履歴を解析中...')
-    const res = await fetch('/api/persona/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ persona_id: personaId, profile }),
-    })
-    if (res.ok) {
+    try {
+      const res = await fetch('/api/persona/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ persona_id: personaId, profile }),
+      })
+      if (!res.ok) throw new Error('Generation failed')
       setStep('done')
-    } else {
-      alert('生成に失敗しました。')
+    } catch (err) {
+      alert(`生成失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setGenerating(false)
+      setStatusMsg('')
     }
-    setGenerating(false)
-    setStatusMsg('')
   }
 
-  const steps = ['プロフィール', '履歴アップロード', 'AI解析', '完了']
   const stepIndex = { profile: 0, upload: 1, generate: 2, done: 3 }[step]
 
-  const c = { maxWidth: 480, margin: '0 auto', padding: '24px 16px', fontFamily: 'system-ui' }
-  const inp = { width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, fontSize: 15, boxSizing: 'border-box' as const }
-  const btn = { background: '#06c755', color: '#fff', border: 'none', borderRadius: 10, padding: '12px 24px', fontSize: 15, cursor: 'pointer', width: '100%', fontWeight: 600 as const }
-  const btnGhost = { ...btn, background: '#fff', color: '#06c755', border: '1.5px solid #06c755' }
+  const s = {
+    page: { minHeight: '100dvh', background: '#f2f2f7', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
+    container: { maxWidth: 480, margin: '0 auto', padding: '24px 16px' },
+    stepBar: { display: 'flex', gap: 8, marginBottom: 28 },
+    stepLine: { flex: 1, height: 3, borderRadius: 2 },
+    title: { fontSize: 28, fontWeight: '700', margin: '0 0 20px', color: '#000' },
+    form: { display: 'flex', flexDirection: 'column' as const, gap: 12 },
+    label: { fontSize: 14, fontWeight: '500', color: '#000', marginBottom: 4, display: 'block' },
+    input: { padding: '12px 14px', border: '1px solid #d5d5d9', borderRadius: 10, fontSize: 16, boxSizing: 'border-box' as const, fontFamily: 'inherit', width: '100%', background: '#fff' },
+    btn: { padding: '12px', background: '#00b900', color: '#fff', border: 'none', borderRadius: 10, fontSize: 16, fontWeight: '600', cursor: 'pointer', width: '100%' },
+    btnGhost: { padding: '12px', background: '#fff', color: '#00b900', border: '1px solid #00b900', borderRadius: 10, fontSize: 16, fontWeight: '600', cursor: 'pointer', width: '100%' },
+    uploadZone: { background: '#fff', border: '2px dashed #d5d5d9', borderRadius: 12, padding: '40px 20px', textAlign: 'center' as const, cursor: 'pointer', display: 'block' },
+    msg: { fontSize: 13, color: '#00b900', margin: '8px 0 0' },
+  }
 
   return (
-    <div style={c}>
-      {/* ステップインジケーター */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 28 }}>
-        {steps.map((s, i) => (
-          <div key={s} style={{ flex: 1, textAlign: 'center' as const }}>
-            <div style={{
-              height: 4, borderRadius: 2, background: i <= stepIndex ? '#06c755' : '#ddd', marginBottom: 4,
-            }} />
-            <span style={{ fontSize: 10, color: i <= stepIndex ? '#06c755' : '#aaa' }}>{s}</span>
+    <div style={s.page}>
+      <div style={s.container}>
+        {step !== 'done' && (
+          <div style={s.stepBar}>
+            {[0, 1, 2].map(i => (
+              <div key={i} style={{ ...s.stepLine, background: i <= stepIndex ? '#00b900' : '#e5e5ea' }} />
+            ))}
           </div>
-        ))}
-      </div>
+        )}
 
-      {/* ステップ1: プロフィール */}
-      {step === 'profile' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px' }}>基本情報を入力</h2>
-          {[
-            { key: 'name', label: '名前 *' },
-            { key: 'age', label: '年齢' },
-            { key: 'job', label: '職業' },
-            { key: 'relationship', label: '関係性（例: 友達・彼女・同僚）' },
-            { key: 'hobbies', label: '趣味・特徴' },
-          ].map(f => (
-            <div key={f.key}>
-              <label style={{ fontSize: 13, color: '#555', display: 'block', marginBottom: 4 }}>{f.label}</label>
-              <input
-                style={inp}
-                value={(profile as Record<string, string>)[f.key]}
-                onChange={e => setProfile(p => ({ ...p, [f.key]: e.target.value }))}
-                placeholder={f.label.replace(' *', '')}
-              />
+        {step === 'profile' && (
+          <>
+            <h2 style={s.title}>基本情報</h2>
+            <div style={s.form}>
+              {[
+                { key: 'name', label: '名前 *', placeholder: '例: 田中太郎' },
+                { key: 'age', label: '年齢', placeholder: '例: 25' },
+                { key: 'job', label: '職業', placeholder: '例: エンジニア' },
+                { key: 'relationship', label: '関係性', placeholder: '例: 友達 / 彼女 / 同僚' },
+                { key: 'hobbies', label: '趣味・特徴', placeholder: '例: ゲーム好き、カフェ巡り' },
+              ].map(f => (
+                <div key={f.key}>
+                  <label style={s.label}>{f.label}</label>
+                  <input
+                    style={s.input}
+                    value={(profile as Record<string, string>)[f.key]}
+                    onChange={e => setProfile(p => ({ ...p, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                  />
+                </div>
+              ))}
+              <button
+                style={{ ...s.btn, opacity: profile.name ? 1 : 0.5 }}
+                onClick={createPersona}
+                disabled={!profile.name}
+              >
+                次へ →
+              </button>
             </div>
-          ))}
-          <button style={btn} onClick={createPersona} disabled={!profile.name}>
-            次へ →
-          </button>
-        </div>
-      )}
+          </>
+        )}
 
-      {/* ステップ2: アップロード */}
-      {step === 'upload' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 4px' }}>トーク履歴をアップロード</h2>
-          <p style={{ fontSize: 14, color: '#666', margin: 0 }}>
-            LINEやインスタのトーク履歴を読み込みます。<br />
-            スクリーンショット（画像）もテキストファイルも対応しています。
-          </p>
-          <div style={{ background: '#f9f9f9', border: '2px dashed #ddd', borderRadius: 12, padding: '28px 20px', textAlign: 'center' as const }}>
-            <label style={{ cursor: 'pointer', display: 'block' }}>
+        {step === 'upload' && (
+          <>
+            <h2 style={s.title}>トーク履歴をアップロード</h2>
+            <p style={{ fontSize: 14, color: '#65676b', lineHeight: 1.6, marginBottom: 16 }}>
+              LINEやInstagramのトーク履歴をスクリーンショット（画像）またはテキストファイルでアップロードしてください。
+            </p>
+            <label style={s.uploadZone}>
               <div style={{ fontSize: 36, marginBottom: 8 }}>📁</div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: '#333' }}>タップしてファイルを選択</div>
-              <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>テキスト(.txt) または 画像（スクショ）対応 / 複数可</div>
+              <div style={{ fontSize: 15, fontWeight: '600', color: '#000', marginBottom: 4 }}>ファイルを選択</div>
+              <div style={{ fontSize: 12, color: '#8e8e93' }}>画像 (.png, .jpg) / テキスト (.txt, .csv) / 複数可</div>
               <input
                 type="file"
                 multiple
                 accept=".txt,.csv,image/*"
                 style={{ display: 'none' }}
                 onChange={e => handleFileUpload(e.target.files)}
+                disabled={uploading}
               />
             </label>
-          </div>
-          {uploading && <p style={{ fontSize: 13, color: '#06c755', margin: 0 }}>⏳ {statusMsg}</p>}
-          {uploadCount > 0 && <p style={{ fontSize: 14, margin: 0, color: '#333' }}>✅ {uploadCount} ファイル処理済み</p>}
-          <div style={{ display: 'flex', gap: 8 }}>
-            {uploadCount > 0 && (
-              <button style={btn} onClick={() => setStep('generate')}>次へ →</button>
-            )}
-            <button style={btnGhost} onClick={() => setStep('generate')}>スキップ</button>
-          </div>
-        </div>
-      )}
+            {uploading && <p style={s.msg}>⏳ {statusMsg}</p>}
+            {uploadCount > 0 && <p style={{ ...s.msg, color: '#000' }}>✅ {uploadCount} ファイル処理済み</p>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
+              {uploadCount > 0 && (
+                <button style={s.btn} onClick={() => setStep('generate')}>次へ →</button>
+              )}
+              <button style={s.btnGhost} onClick={() => setStep('generate')}>スキップ</button>
+            </div>
+          </>
+        )}
 
-      {/* ステップ3: AI解析 */}
-      {step === 'generate' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 4px' }}>AIがペルソナを生成</h2>
-          <p style={{ fontSize: 14, color: '#666', margin: 0 }}>
-            アップロードした履歴をもとに、{profile.name}さんの話し方・口癖・性格を学習します。
-          </p>
-          <button style={btn} onClick={generatePersona} disabled={generating}>
-            {generating ? '解析中...' : '生成する'}
-          </button>
-          {statusMsg && <p style={{ fontSize: 13, color: '#06c755', margin: 0 }}>{statusMsg}</p>}
-        </div>
-      )}
+        {step === 'generate' && (
+          <>
+            <h2 style={s.title}>AIがペルソナを生成</h2>
+            <p style={{ fontSize: 14, color: '#65676b', lineHeight: 1.6, marginBottom: 20 }}>
+              {uploadCount > 0
+                ? `${uploadCount}個のファイルを解析して、${profile.name}さんの話し方を学習します。`
+                : `${profile.name}さんのペルソナを生成します。`}
+            </p>
+            <button
+              style={{ ...s.btn, opacity: generating ? 0.6 : 1 }}
+              onClick={generatePersona}
+              disabled={generating}
+            >
+              {generating ? '解析中...' : '生成する'}
+            </button>
+            {statusMsg && <p style={s.msg}>{statusMsg}</p>}
+          </>
+        )}
 
-      {/* ステップ4: 完了 */}
-      {step === 'done' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, textAlign: 'center' as const }}>
-          <div style={{ fontSize: 56 }}>🎉</div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>ペルソナ生成完了！</h2>
-          <p style={{ fontSize: 14, color: '#666', margin: 0 }}>
-            {profile.name}さんとのチャットを始められます。<br />
-            チャット画面で「通知ON」ボタンを押すと、{profile.name}さんから自動でメッセージが届くようになります。
-          </p>
-          <button style={btn} onClick={() => router.push(`/persona/${personaId}`)}>
-            チャットを始める →
-          </button>
-        </div>
-      )}
+        {step === 'done' && (
+          <div style={{ textAlign: 'center' as const }}>
+            <div style={{ fontSize: 64, marginBottom: 12 }}>🎉</div>
+            <h2 style={{ ...s.title, textAlign: 'center', marginTop: 0 }}>ペルソナ生成完了！</h2>
+            <p style={{ fontSize: 14, color: '#65676b', marginBottom: 28, lineHeight: 1.6 }}>
+              {profile.name}さんとのチャットを開始できます。
+            </p>
+            <button style={s.btn} onClick={() => router.push(`/persona/${personaId}`)}>
+              チャットを始める →
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

@@ -10,8 +10,13 @@ type Persona = {
   auto_message_enabled: boolean
 }
 
+type MessagePreview = Persona & {
+  lastMessage?: string
+  lastMessageTime?: string
+}
+
 export default function HomePage() {
-  const [personas, setPersonas] = useState<Persona[]>([])
+  const [personas, setPersonas] = useState<MessagePreview[]>([])
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
@@ -24,9 +29,32 @@ export default function HomePage() {
       const { data, error } = await supabaseClient
         .from('personas')
         .select('id, name, profile, auto_message_enabled')
-        .order('created_at', { ascending: false })
+        .order('updated_at', { ascending: false })
+
       if (error) throw error
-      setPersonas(data ?? [])
+
+      const withMessages = await Promise.all((data ?? []).map(async (p) => {
+        const { data: msgs } = await supabaseClient
+          .from('messages')
+          .select('content, created_at, message_type')
+          .eq('persona_id', p.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+
+        const lastMsg = msgs?.[0]
+        let preview = ''
+        if (lastMsg) {
+          preview = lastMsg.message_type === 'image' ? '[画像]' : (lastMsg.content ?? '').substring(0, 30)
+        }
+
+        const timeStr = lastMsg?.created_at
+          ? new Date(lastMsg.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+          : ''
+
+        return { ...p, lastMessage: preview, lastMessageTime: timeStr }
+      }))
+
+      setPersonas(withMessages)
     } catch (err) {
       console.error('Failed to load personas:', err)
     } finally {
@@ -35,22 +63,103 @@ export default function HomePage() {
   }
 
   const s = {
-    page: { fontFamily: 'system-ui', background: '#f5f5f5', minHeight: '100dvh', display: 'flex', flexDirection: 'column' as const },
-    header: { background: '#06c755', color: '#fff', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 },
-    title: { fontSize: 18, fontWeight: 700, margin: 0 },
-    addBtn: { background: 'rgba(255,255,255,0.25)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 600, padding: '6px 14px', cursor: 'pointer' },
-    item: { background: '#fff', borderBottom: '1px solid #f0f0f0', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' },
-    avatar: { width: 48, height: 48, borderRadius: '50%', background: '#06c755', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, color: '#fff', fontWeight: 700, flexShrink: 0 },
-    name: { fontSize: 16, fontWeight: 600, margin: '0 0 2px' },
-    sub: { fontSize: 13, color: '#888', margin: 0 },
-    badge: { marginLeft: 'auto', fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: 10 },
-    empty: { textAlign: 'center' as const, padding: '80px 20px', color: '#999', flex: 1, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center' },
+    page: {
+      display: 'flex',
+      flexDirection: 'column' as const,
+      height: '100dvh',
+      background: '#fff',
+      fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+    },
+    header: {
+      background: '#fff',
+      padding: '12px 16px',
+      borderBottom: '1px solid #e5e5ea',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      flexShrink: 0,
+    },
+    title: {
+      fontSize: 32,
+      fontWeight: '700',
+      margin: 0,
+      color: '#000',
+    },
+    addBtn: {
+      background: 'none',
+      border: 'none',
+      fontSize: 24,
+      cursor: 'pointer',
+      padding: '4px 8px',
+      color: '#00b900',
+    },
+    list: {
+      flex: 1,
+      overflowY: 'auto' as const,
+    },
+    item: {
+      display: 'flex',
+      alignItems: 'center',
+      padding: '10px 16px',
+      borderBottom: '1px solid #e5e5ea',
+      cursor: 'pointer',
+      background: '#fff',
+      transition: 'background 0.1s',
+    },
+    avatar: {
+      width: 56,
+      height: 56,
+      borderRadius: '50%',
+      background: '#00b900',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: 24,
+      color: '#fff',
+      fontWeight: '600',
+      flexShrink: 0,
+      marginRight: 12,
+    },
+    content: {
+      flex: 1,
+      minWidth: 0,
+    },
+    name: {
+      fontSize: 16,
+      fontWeight: '500',
+      margin: '0 0 3px 0',
+      color: '#000',
+    },
+    preview: {
+      fontSize: 13,
+      color: '#8e8e93',
+      margin: 0,
+      whiteSpace: 'nowrap' as const,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+    },
+    time: {
+      fontSize: 12,
+      color: '#8e8e93',
+      flexShrink: 0,
+      marginLeft: 8,
+    },
+    empty: {
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column' as const,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '60px 20px',
+      textAlign: 'center' as const,
+      color: '#8e8e93',
+    },
   }
 
   if (loading) {
     return (
       <div style={{ ...s.page, alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontSize: 14, color: '#666' }}>読み込み中...</div>
+        <div style={{ fontSize: 14, color: '#8e8e93' }}>読み込み中...</div>
       </div>
     )
   }
@@ -58,36 +167,37 @@ export default function HomePage() {
   return (
     <div style={s.page}>
       <div style={s.header}>
-        <h1 style={s.title}>トーク</h1>
-        <button style={s.addBtn} onClick={() => router.push('/persona/new')}>+ 追加</button>
+        <h1 style={s.title}>チャット</h1>
+        <button style={s.addBtn} onClick={() => router.push('/persona/new')} title="新規追加">✎</button>
       </div>
+
       {personas.length === 0 ? (
         <div style={s.empty}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>💬</div>
-          <p style={{ margin: '0 0 16px', fontSize: 14 }}>ペルソナがまだいません</p>
+          <div style={{ fontSize: 14, marginBottom: 16 }}>トークがまだありません</div>
           <button
             onClick={() => router.push('/persona/new')}
-            style={{ background: '#06c755', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 24px', fontSize: 15, cursor: 'pointer' }}
+            style={{ background: '#00b900', color: '#fff', border: 'none', borderRadius: 20, padding: '10px 28px', fontSize: 15, fontWeight: '600', cursor: 'pointer' }}
           >
-            最初のペルソナを追加
+            + ペルソナを追加
           </button>
         </div>
       ) : (
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div style={s.list}>
           {personas.map(p => (
             <div
               key={p.id}
               style={s.item}
               onClick={() => router.push(`/persona/${p.id}`)}
-              onMouseEnter={e => (e.currentTarget.style.background = '#f9f9f9')}
-              onMouseLeave={e => (e.currentTarget.style.background = '#fff')}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f2f2f7' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#fff' }}
             >
               <div style={s.avatar}>{p.name.charAt(0)}</div>
-              <div>
+              <div style={s.content}>
                 <p style={s.name}>{p.name}</p>
-                <p style={s.sub}>{p.profile?.relationship ?? 'ペルソナ'}</p>
+                <p style={s.preview}>{p.lastMessage || 'トークを開始'}</p>
               </div>
-              {p.auto_message_enabled && <span style={s.badge}>自動ON</span>}
+              {p.lastMessageTime && <div style={s.time}>{p.lastMessageTime}</div>}
             </div>
           ))}
         </div>

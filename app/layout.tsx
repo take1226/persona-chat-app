@@ -6,25 +6,34 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default',
+    statusBarStyle: 'black-translucent',
     title: 'トークアプリ',
+  },
+  icons: {
+    apple: '/icon-192.png',
+    icon: '/icon-192.png',
   },
 }
 
 export const viewport: Viewport = {
-  themeColor: '#06c755',
+  themeColor: '#00b900',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ja">
-      <head>
-        <link rel="apple-touch-icon" href="/icon-192.png" />
-      </head>
-      <body style={{ margin: 0, padding: 0 }}>{children}</body>
+      <body style={{
+        margin: 0,
+        padding: 0,
+        overflow: 'hidden',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
+      }}>
+        {children}
+      </body>
     </html>
   )
 }

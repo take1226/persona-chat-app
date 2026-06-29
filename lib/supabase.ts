@@ -12,7 +12,6 @@ function getClient(): SupabaseClient {
   return _supabaseClient
 }
 
-// クライアント側（ブラウザから使用）— Proxy で遅延初期化
 export const supabaseClient: SupabaseClient = new Proxy({} as SupabaseClient, {
   get(_, prop) {
     const client = getClient()
@@ -21,7 +20,6 @@ export const supabaseClient: SupabaseClient = new Proxy({} as SupabaseClient, {
   },
 })
 
-// サーバー側（APIルートから使用 / Service Role）
 export function createServerClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
