@@ -1,7 +1,6 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabaseClient } from '@/lib/supabase'
 
 type Step = 'profile' | 'upload' | 'generate' | 'done'
 
@@ -23,32 +22,25 @@ export default function NewPersonaPage() {
       return
     }
     try {
-      const { data, error: supabaseError } = await supabaseClient
-        .from('personas')
-        .insert({
-          name: profile.name,
-          profile,
-          auto_message_enabled: true,
-          auto_message_interval_min: 5,
-          auto_message_interval_max: 30,
-        })
-        .select()
-        .single()
-
-      if (supabaseError) {
-        console.error('Supabase error:', supabaseError)
-        setError(`エラー: ${supabaseError.message}`)
+      const res = await fetch('/api/persona/init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(`❌ エラー: ${data.error ?? 'Failed to create persona'}`)
         return
       }
-      if (!data) {
-        setError('ペルソナの作成に失敗しました')
+      if (!data.persona_id) {
+        setError('❌ ペルソナIDが取得できませんでした')
         return
       }
-      setPersonaId(data.id)
+      setPersonaId(data.persona_id)
       setStep('upload')
     } catch (err) {
-      console.error('Unexpected error:', err)
-      setError(`予期しないエラー: ${err instanceof Error ? err.message : 'Unknown'}`)
+      console.error('Error creating persona:', err)
+      setError(`❌ 予期しないエラー: ${err instanceof Error ? err.message : 'Unknown'}`)
     }
   }
 
@@ -72,7 +64,7 @@ export default function NewPersonaPage() {
       }
     } catch (err) {
       console.error('Upload error:', err)
-      setError(`アップロード失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      setError(`❌ アップロード失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
     } finally {
       setUploading(false)
       setStatusMsg('')
@@ -97,7 +89,7 @@ export default function NewPersonaPage() {
       setStep('done')
     } catch (err) {
       console.error('Generation error:', err)
-      setError(`生成失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      setError(`❌ 生成失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
     } finally {
       setGenerating(false)
       setStatusMsg('')
@@ -121,8 +113,8 @@ export default function NewPersonaPage() {
     btn: { padding: '12px', background: '#00b900', color: '#fff', border: 'none', borderRadius: 10, fontSize: 16, fontWeight: '600', cursor: 'pointer', width: '100%' },
     btnGhost: { padding: '12px', background: '#fff', color: '#00b900', border: '1px solid #00b900', borderRadius: 10, fontSize: 16, fontWeight: '600', cursor: 'pointer', width: '100%' },
     uploadZone: { background: '#fff', border: '2px dashed #d5d5d9', borderRadius: 12, padding: '40px 20px', textAlign: 'center' as const, cursor: 'pointer', display: 'block' },
-    msg: { fontSize: 13, color: '#00b900', margin: '8px 0 0', padding: '8px 12px', background: '#f0f9f0', borderRadius: 8 },
-    errMsg: { fontSize: 13, color: '#d32f2f', padding: '8px 12px', background: '#ffebee', borderRadius: 8, marginBottom: 12 },
+    msg: { fontSize: 13, color: '#2e7d32', margin: '8px 0 0', padding: '8px 12px', background: '#f0f9f0', borderRadius: 8, lineHeight: 1.6 },
+    errMsg: { fontSize: 13, color: '#d32f2f', padding: '8px 12px', background: '#ffebee', borderRadius: 8, marginBottom: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap' as const },
   }
 
   return (
@@ -217,7 +209,7 @@ export default function NewPersonaPage() {
               />
             </label>
             {statusMsg && <p style={s.msg}>⏳ {statusMsg}</p>}
-            {uploadCount > 0 && <p style={{ ...s.msg, color: '#2e7d32' }}>✅ {uploadCount} ファイル処理済み</p>}
+            {uploadCount > 0 && <p style={s.msg}>✅ {uploadCount} ファイル処理済み</p>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
               {uploadCount > 0 && (
                 <button style={s.btn} onClick={() => setStep('generate')}>次へ →</button>
