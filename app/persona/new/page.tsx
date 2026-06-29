@@ -9,16 +9,21 @@ export default function NewPersonaPage() {
   const router = useRouter()
   const [step, setStep] = useState<Step>('profile')
   const [personaId, setPersonaId] = useState<string | null>(null)
-  const [profile, setProfile] = useState({ name: '', age: '', job: '', relationship: '', hobbies: '' })
+  const [profile, setProfile] = useState({ name: '', relationship: '', gender: '', remarks: '' })
   const [uploading, setUploading] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [uploadCount, setUploadCount] = useState(0)
   const [statusMsg, setStatusMsg] = useState('')
+  const [error, setError] = useState('')
 
   async function createPersona() {
-    if (!profile.name) return
+    setError('')
+    if (!profile.name.trim()) {
+      setError('名前を入力してください')
+      return
+    }
     try {
-      const { data, error } = await supabaseClient
+      const { data, error: supabaseError } = await supabaseClient
         .from('personas')
         .insert({
           name: profile.name,
@@ -29,31 +34,36 @@ export default function NewPersonaPage() {
         })
         .select()
         .single()
-      if (error || !data) throw error
+
+      if (supabaseError) {
+        console.error('Supabase error:', supabaseError)
+        setError(`エラー: ${supabaseError.message}`)
+        return
+      }
+      if (!data) {
+        setError('ペルソナの作成に失敗しました')
+        return
+      }
       setPersonaId(data.id)
       setStep('upload')
     } catch (err) {
-      alert(`作成失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      console.error('Unexpected error:', err)
+      setError(`予期しないエラー: ${err instanceof Error ? err.message : 'Unknown'}`)
     }
   }
 
   async function handleFileUpload(files: FileList | null) {
     if (!files || !personaId) return
     setUploading(true)
+    setError('')
     try {
       for (const file of Array.from(files)) {
         const isImage = file.type.startsWith('image/')
         const formData = new FormData()
         formData.append('file', file)
         formData.append('persona_id', personaId)
-
-        if (isImage) {
-          formData.append('source_type', 'screenshot')
-          setStatusMsg(`OCR処理中: ${file.name}`)
-        } else {
-          formData.append('source_type', 'text')
-          setStatusMsg(`テキスト処理中: ${file.name}`)
-        }
+        formData.append('source_type', isImage ? 'screenshot' : 'text')
+        setStatusMsg(isImage ? `OCR処理中: ${file.name}` : `テキスト処理中: ${file.name}`)
 
         const endpoint = isImage ? '/api/upload/image' : '/api/upload/text'
         const res = await fetch(endpoint, { method: 'POST', body: formData })
@@ -61,7 +71,8 @@ export default function NewPersonaPage() {
         setUploadCount(c => c + 1)
       }
     } catch (err) {
-      alert(`アップロード失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      console.error('Upload error:', err)
+      setError(`アップロード失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
     } finally {
       setUploading(false)
       setStatusMsg('')
@@ -71,6 +82,7 @@ export default function NewPersonaPage() {
   async function generatePersona() {
     if (!personaId) return
     setGenerating(true)
+    setError('')
     setStatusMsg('履歴を解析中...')
     try {
       const res = await fetch('/api/persona/create', {
@@ -78,10 +90,14 @@ export default function NewPersonaPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ persona_id: personaId, profile }),
       })
-      if (!res.ok) throw new Error('Generation failed')
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error((errData as { error?: string }).error ?? 'Generation failed')
+      }
       setStep('done')
     } catch (err) {
-      alert(`生成失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
+      console.error('Generation error:', err)
+      setError(`生成失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
     } finally {
       setGenerating(false)
       setStatusMsg('')
@@ -96,13 +112,17 @@ export default function NewPersonaPage() {
     stepBar: { display: 'flex', gap: 8, marginBottom: 28 },
     stepLine: { flex: 1, height: 3, borderRadius: 2 },
     title: { fontSize: 28, fontWeight: '700', margin: '0 0 20px', color: '#000' },
-    form: { display: 'flex', flexDirection: 'column' as const, gap: 12 },
+    form: { display: 'flex', flexDirection: 'column' as const, gap: 14 },
     label: { fontSize: 14, fontWeight: '500', color: '#000', marginBottom: 4, display: 'block' },
     input: { padding: '12px 14px', border: '1px solid #d5d5d9', borderRadius: 10, fontSize: 16, boxSizing: 'border-box' as const, fontFamily: 'inherit', width: '100%', background: '#fff' },
+    textarea: { padding: '12px 14px', border: '1px solid #d5d5d9', borderRadius: 10, fontSize: 16, boxSizing: 'border-box' as const, fontFamily: 'inherit', width: '100%', background: '#fff', minHeight: 80, resize: 'vertical' as const },
+    radioGroup: { display: 'flex', gap: 20 },
+    radioLabel: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 15, cursor: 'pointer' },
     btn: { padding: '12px', background: '#00b900', color: '#fff', border: 'none', borderRadius: 10, fontSize: 16, fontWeight: '600', cursor: 'pointer', width: '100%' },
     btnGhost: { padding: '12px', background: '#fff', color: '#00b900', border: '1px solid #00b900', borderRadius: 10, fontSize: 16, fontWeight: '600', cursor: 'pointer', width: '100%' },
     uploadZone: { background: '#fff', border: '2px dashed #d5d5d9', borderRadius: 12, padding: '40px 20px', textAlign: 'center' as const, cursor: 'pointer', display: 'block' },
-    msg: { fontSize: 13, color: '#00b900', margin: '8px 0 0' },
+    msg: { fontSize: 13, color: '#00b900', margin: '8px 0 0', padding: '8px 12px', background: '#f0f9f0', borderRadius: 8 },
+    errMsg: { fontSize: 13, color: '#d32f2f', padding: '8px 12px', background: '#ffebee', borderRadius: 8, marginBottom: 12 },
   }
 
   return (
@@ -116,29 +136,58 @@ export default function NewPersonaPage() {
           </div>
         )}
 
+        {error && <div style={s.errMsg}>{error}</div>}
+
         {step === 'profile' && (
           <>
             <h2 style={s.title}>基本情報</h2>
             <div style={s.form}>
-              {[
-                { key: 'name', label: '名前 *', placeholder: '例: 田中太郎' },
-                { key: 'age', label: '年齢', placeholder: '例: 25' },
-                { key: 'job', label: '職業', placeholder: '例: エンジニア' },
-                { key: 'relationship', label: '関係性', placeholder: '例: 友達 / 彼女 / 同僚' },
-                { key: 'hobbies', label: '趣味・特徴', placeholder: '例: ゲーム好き、カフェ巡り' },
-              ].map(f => (
-                <div key={f.key}>
-                  <label style={s.label}>{f.label}</label>
-                  <input
-                    style={s.input}
-                    value={(profile as Record<string, string>)[f.key]}
-                    onChange={e => setProfile(p => ({ ...p, [f.key]: e.target.value }))}
-                    placeholder={f.placeholder}
-                  />
+              <div>
+                <label style={s.label}>名前 *</label>
+                <input
+                  style={s.input}
+                  value={profile.name}
+                  onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
+                  placeholder="例: 田中太郎"
+                />
+              </div>
+              <div>
+                <label style={s.label}>関係性</label>
+                <input
+                  style={s.input}
+                  value={profile.relationship}
+                  onChange={e => setProfile(p => ({ ...p, relationship: e.target.value }))}
+                  placeholder="例: 友達 / 彼女 / 同僚"
+                />
+              </div>
+              <div>
+                <label style={s.label}>性別</label>
+                <div style={s.radioGroup}>
+                  {['男', '女', 'その他'].map(opt => (
+                    <label key={opt} style={s.radioLabel}>
+                      <input
+                        type="radio"
+                        name="gender"
+                        value={opt}
+                        checked={profile.gender === opt}
+                        onChange={e => setProfile(p => ({ ...p, gender: e.target.value }))}
+                      />
+                      {opt}
+                    </label>
+                  ))}
                 </div>
-              ))}
+              </div>
+              <div>
+                <label style={s.label}>備考</label>
+                <textarea
+                  style={s.textarea}
+                  value={profile.remarks}
+                  onChange={e => setProfile(p => ({ ...p, remarks: e.target.value }))}
+                  placeholder="その他の特徴や情報（省略可）"
+                />
+              </div>
               <button
-                style={{ ...s.btn, opacity: profile.name ? 1 : 0.5 }}
+                style={{ ...s.btn, opacity: profile.name ? 1 : 0.5, cursor: profile.name ? 'pointer' : 'not-allowed' }}
                 onClick={createPersona}
                 disabled={!profile.name}
               >
@@ -167,8 +216,8 @@ export default function NewPersonaPage() {
                 disabled={uploading}
               />
             </label>
-            {uploading && <p style={s.msg}>⏳ {statusMsg}</p>}
-            {uploadCount > 0 && <p style={{ ...s.msg, color: '#000' }}>✅ {uploadCount} ファイル処理済み</p>}
+            {statusMsg && <p style={s.msg}>⏳ {statusMsg}</p>}
+            {uploadCount > 0 && <p style={{ ...s.msg, color: '#2e7d32' }}>✅ {uploadCount} ファイル処理済み</p>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
               {uploadCount > 0 && (
                 <button style={s.btn} onClick={() => setStep('generate')}>次へ →</button>
