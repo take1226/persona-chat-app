@@ -70,10 +70,10 @@ export default function HomePage() {
     header: { background: '#fff', padding: '12px 16px', borderBottom: '1px solid #e5e5ea', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 },
     title: { fontSize: 32, fontWeight: '700', margin: 0, color: '#000' },
     headerActions: { display: 'flex', gap: 4 },
-    iconBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 8px', color: '#00b900' },
+    iconBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 8px', color: '#06c755' },
     list: { flex: 1, overflowY: 'auto' as const },
-    item: { display: 'flex', alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid #e5e5ea', cursor: 'pointer', background: '#fff' },
-    avatar: { width: 54, height: 54, borderRadius: '50%', background: '#00b900', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: '#fff', fontWeight: '600', flexShrink: 0, marginRight: 12, overflow: 'hidden' },
+    item: { display: 'flex', alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid #e5e5ea', cursor: 'pointer', background: '#fff', transition: 'background-color 0.15s' },
+    avatar: { width: 54, height: 54, borderRadius: '50%', background: '#06c755', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: '#fff', fontWeight: '600', flexShrink: 0, marginRight: 12, overflow: 'hidden' },
     content: { flex: 1, minWidth: 0 },
     name: { fontSize: 16, fontWeight: '500', margin: '0 0 3px 0', color: '#000' },
     preview: { fontSize: 13, color: '#8e8e93', margin: 0, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
@@ -97,6 +97,7 @@ export default function HomePage() {
       <div style={s.header}>
         <h1 style={s.title}>チャット</h1>
         <div style={s.headerActions}>
+          <button style={s.iconBtn} title="検索" onClick={() => alert('検索機能は近日対応予定です')}>🔍</button>
           <button style={s.iconBtn} onClick={() => router.push('/persona/new')} title="新規追加">✎</button>
         </div>
       </div>
@@ -116,7 +117,7 @@ export default function HomePage() {
               <div
                 style={s.item}
                 onClick={() => { if (menuOpen === p.id) { setMenuOpen(null); return } router.push(`/persona/${p.id}`) }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f2f2f7' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f9f9f9' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#fff' }}
               >
                 <div style={s.avatar}>
