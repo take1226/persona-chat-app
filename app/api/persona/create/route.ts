@@ -18,17 +18,18 @@ export async function POST(req: NextRequest) {
     .filter(Boolean)
     .join('\n\n---\n\n')
 
-  if (!combinedText) {
-    return NextResponse.json({ error: 'アップロードされた履歴がありません' }, { status: 400 })
-  }
-
-  const prompt = `以下はある人物（「対象者」）のトーク履歴です。対象者の発言パターンを分析して、その人を模倣するためのプロフィールをJSONで出力してください。
+  const prompt = combinedText
+    ? `以下はある人物（「対象者」）のトーク履歴です。対象者の発言パターンを分析して、その人を模倣するためのプロフィールをJSONで出力してください。
 
 【プロフィール】
 ${JSON.stringify(profile, null, 2)}
 
 【トーク履歴】
-${combinedText.substring(0, 15000)}
+${combinedText.substring(0, 15000)}`
+    : `以下のプロフィール情報をもとに、この人物を模倣するためのプロフィールをJSONで出力してください。
+
+【プロフィール】
+${JSON.stringify(profile, null, 2)}
 
 以下のJSON形式のみで出力（前後の説明不要）：
 {
