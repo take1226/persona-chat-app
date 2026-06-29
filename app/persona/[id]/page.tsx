@@ -17,6 +17,7 @@ type Message = {
 type Persona = {
   id: string
   name: string
+  avatar_url?: string
   auto_message_enabled: boolean
 }
 
@@ -36,18 +37,23 @@ export default function ChatPage() {
   const [pushLoading, setPushLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const messageIdsRef = useRef<Set<string>>(new Set())
+  const sendingRef = useRef(false)
 
   useEffect(() => {
     if (!personaId) { router.push('/'); return }
-    getDoc(doc(db, 'personas', personaId)).then(snap => {
+
+    // Realtime listener on persona doc — picks up avatar_url changes from settings page
+    const unsubPersona = onSnapshot(doc(db, 'personas', personaId), (snap) => {
       if (!snap.exists()) { router.push('/'); return }
-      const d = snap.data() as { name: string; auto_message_enabled: boolean }
-      setPersona({ id: snap.id, name: d.name, auto_message_enabled: d.auto_message_enabled })
-    }).catch(() => router.push('/'))
+      const d = snap.data() as { name: string; avatar_url?: string; auto_message_enabled: boolean }
+      setPersona({ id: snap.id, name: d.name, avatar_url: d.avatar_url, auto_message_enabled: d.auto_message_enabled })
+    }, () => router.push('/'))
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setPushEnabled(Notification.permission === 'granted')
     }
+
+    return () => unsubPersona()
   }, [personaId, router])
 
   useEffect(() => {
@@ -112,7 +118,8 @@ export default function ChatPage() {
   }, [])
 
   async function handleSend() {
-    if (!input.trim() || sending || !personaId) return
+    if (sendingRef.current || !input.trim() || !personaId) return
+    sendingRef.current = true
     const text = input.trim()
     setInput('')
     setSending(true)
@@ -146,6 +153,7 @@ export default function ChatPage() {
       setInput(text)
       alert('送信に失敗しました。')
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
   }
@@ -186,7 +194,11 @@ export default function ChatPage() {
     <div style={s.container}>
       <div style={s.header}>
         <button style={s.backBtn} onClick={() => router.push('/')}>‹</button>
-        <div style={s.avatar}>{initials}</div>
+        <div style={s.avatar}>
+          {persona.avatar_url
+            ? <img src={persona.avatar_url} alt={persona.name} style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+            : initials}
+        </div>
         <div style={s.headerInfo}>
           <p style={s.headerName}>{persona.name}</p>
           <p style={s.headerStatus}>AIペルソナ</p>
@@ -204,7 +216,11 @@ export default function ChatPage() {
           <div key={msg.id}>
             {msg.role === 'assistant' ? (
               <div style={s.rowThem}>
-                <div style={s.avatarSmall}>{initials}</div>
+                <div style={s.avatarSmall}>
+                  {persona.avatar_url
+                    ? <img src={persona.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                    : initials}
+                </div>
                 <div>
                   {msg.message_type === 'image' && msg.image_url ? (
                     <div style={s.imageBox}><img src={msg.image_url} alt="画像" style={{ width: '100%', display: 'block' }} /></div>
@@ -224,7 +240,11 @@ export default function ChatPage() {
         ))}
         {sending && (
           <div style={s.rowThem}>
-            <div style={s.avatarSmall}>{initials}</div>
+            <div style={s.avatarSmall}>
+              {persona.avatar_url
+                ? <img src={persona.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                : initials}
+            </div>
             <div style={{ ...s.bubbleThem, color: '#8e8e93' }}>入力中…</div>
           </div>
         )}

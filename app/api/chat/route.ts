@@ -40,11 +40,17 @@ export async function POST(req: NextRequest) {
     ...d.data() as { public_url: string; category: string; description: string; tags?: string[]; send_count: number },
   }))
 
-  const systemPrompt = persona.system_prompt ?? `あなたは${persona.name}として自然に会話してください。`
+  const basePrompt = persona.behavior_prompt || persona.system_prompt || `あなたは${persona.name}として自然に会話してください。`
+  const systemPrompt = `${basePrompt}
+
+【返答ルール】
+- 1〜3文で返す（50字以内が目安）
+- 説明・解説は不要。会話だけ。
+- 相手のトーンに合わせる`
 
   // Parallel: generate AI text reply and decide on image simultaneously
   const [replyText, imageDecision] = await Promise.all([
-    chat(systemPrompt, history, user_message, 500),
+    chat(systemPrompt, history, user_message, 150),
     images.length > 0 ? decideImageIndex(user_message, images) : Promise.resolve('none'),
   ])
 
