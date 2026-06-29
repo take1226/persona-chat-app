@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { visionOCR } from '@/lib/ai-client'
-import { adminDb, adminBucket } from '@/lib/firebase-admin'
+import { adminDb } from '@/lib/firebase-admin'
 import { Timestamp } from 'firebase-admin/firestore'
+import { put } from '@vercel/blob'
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData()
@@ -15,9 +16,8 @@ export async function POST(req: NextRequest) {
 
   let publicUrl = ''
   try {
-    const fileRef = adminBucket().file(storagePath)
-    await fileRef.save(buffer, { contentType: file.type, public: true })
-    publicUrl = fileRef.publicUrl()
+    const blob = await put(storagePath, buffer, { access: 'public', contentType: file.type })
+    publicUrl = blob.url
   } catch (err) {
     console.error('Storage upload failed:', err)
   }
