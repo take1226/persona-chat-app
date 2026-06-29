@@ -1,19 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generate } from '@/lib/ai-client'
-import { createServerClient } from '@/lib/supabase'
+import { adminDb } from '@/lib/firebase-admin'
+import { Timestamp } from 'firebase-admin/firestore'
 
 export async function POST(req: NextRequest) {
   const { persona_id, profile } = await req.json()
-  const supabase = createServerClient()
+  const db = adminDb()
 
-  const { data: sources } = await supabase
-    .from('upload_sources')
-    .select('raw_text, source_type, ocr_confidence')
-    .eq('persona_id', persona_id)
-    .not('raw_text', 'is', null)
+  const uploadsSnap = await db
+    .collection('personas').doc(persona_id)
+    .collection('uploads')
+    .where('processed', '==', false)
+    .get()
 
-  const combinedText = (sources ?? [])
-    .map(s => s.raw_text)
+  const combinedText = uploadsSnap.docs
+    .map(d => (d.data() as { raw_text?: string }).raw_text)
     .filter(Boolean)
     .join('\n\n---\n\n')
 
@@ -49,26 +50,16 @@ ${combinedText.substring(0, 15000)}
     systemPrompt = analysis.system_prompt as string ?? systemPrompt
   } catch { /* fallback */ }
 
-  const { data, error } = await supabase
-    .from('personas')
-    .update({
-      system_prompt: systemPrompt,
-      raw_analysis: analysis,
-      profile,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', persona_id)
-    .select()
-    .single()
+  await db.collection('personas').doc(persona_id).update({
+    system_prompt: systemPrompt,
+    raw_analysis: analysis,
+    profile,
+    updated_at: Timestamp.now(),
+  })
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  const batch = db.batch()
+  uploadsSnap.docs.forEach(d => batch.update(d.ref, { processed: true }))
+  await batch.commit()
 
-  await supabase
-    .from('upload_sources')
-    .update({ processed: true })
-    .eq('persona_id', persona_id)
-
-  return NextResponse.json({ success: true, persona: data, analysis })
+  return NextResponse.json({ success: true, analysis })
 }

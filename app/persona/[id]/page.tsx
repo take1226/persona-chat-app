@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { supabaseClient } from '@/lib/supabase'
+import { db } from '@/lib/firebase'
+import { collection, query, orderBy, onSnapshot, doc, getDoc, Timestamp } from 'firebase/firestore'
 
 type Message = {
   id: string
@@ -35,143 +36,50 @@ export default function ChatPage() {
   const [pushLoading, setPushLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const messageIdsRef = useRef<Set<string>>(new Set())
-  const channelRef = useRef<ReturnType<typeof supabaseClient.channel> | null>(null)
 
   useEffect(() => {
-    if (!personaId) {
-      router.push('/')
-      return
+    if (!personaId) { router.push('/'); return }
+    getDoc(doc(db, 'personas', personaId)).then(snap => {
+      if (!snap.exists()) { router.push('/'); return }
+      const d = snap.data() as { name: string; auto_message_enabled: boolean }
+      setPersona({ id: snap.id, name: d.name, auto_message_enabled: d.auto_message_enabled })
+    }).catch(() => router.push('/'))
+
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setPushEnabled(Notification.permission === 'granted')
     }
-    loadPersona()
-    loadMessages()
-    checkPushStatus()
-  }, [personaId])
+  }, [personaId, router])
 
   useEffect(() => {
     if (!personaId) return
-
-    if (channelRef.current) {
-      supabaseClient.removeChannel(channelRef.current)
-    }
-
-    const channel = supabaseClient
-      .channel(`messages:${personaId}:${Date.now()}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages', filter: `persona_id=eq.${personaId}` },
-        async (payload) => {
-          const newMsg = payload.new as {
-            id: string
-            role: string
-            content: string | null
-            message_type: string
-            is_auto_message: boolean
-            image_id: string | null
-            created_at: string
-          }
-
-          if (messageIdsRef.current.has(newMsg.id)) return
-          messageIdsRef.current.add(newMsg.id)
-
-          let image_url: string | undefined
-          if (newMsg.message_type === 'image' && newMsg.image_id) {
-            try {
-              const { data: img } = await supabaseClient
-                .from('persona_images')
-                .select('public_url')
-                .eq('id', newMsg.image_id)
-                .single()
-              image_url = img?.public_url
-            } catch (err) {
-              console.error('Failed to fetch image URL:', err)
-            }
-          }
-
-          const msg: Message = {
-            id: newMsg.id,
-            role: newMsg.role as 'user' | 'assistant',
-            content: newMsg.content,
-            message_type: newMsg.message_type as 'text' | 'image',
-            is_auto_message: newMsg.is_auto_message,
-            image_url,
-            created_at: newMsg.created_at,
-          }
-
-          setMessages(prev => {
-            if (prev.some(m => m.id === msg.id)) return prev
-            return [...prev, msg]
-          })
+    const q = query(collection(db, 'personas', personaId, 'messages'), orderBy('created_at', 'asc'))
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type !== 'added') return
+        const data = change.doc.data() as {
+          role: string; content?: string; message_type?: string;
+          is_auto_message?: boolean; image_url?: string; created_at?: Timestamp
         }
-      )
-      .subscribe()
-
-    channelRef.current = channel
-
-    return () => {
-      supabaseClient.removeChannel(channel)
-      channelRef.current = null
-    }
+        const msg: Message = {
+          id: change.doc.id,
+          role: data.role as 'user' | 'assistant',
+          content: data.content ?? null,
+          message_type: (data.message_type ?? 'text') as 'text' | 'image',
+          is_auto_message: data.is_auto_message ?? false,
+          image_url: data.image_url,
+          created_at: data.created_at?.toDate().toISOString() ?? new Date().toISOString(),
+        }
+        if (messageIdsRef.current.has(msg.id)) return
+        messageIdsRef.current.add(msg.id)
+        setMessages(prev => [...prev, msg])
+      })
+    })
+    return () => unsubscribe()
   }, [personaId])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
-
-  async function loadPersona() {
-    if (!personaId) return
-    try {
-      const { data, error } = await supabaseClient
-        .from('personas')
-        .select('id, name, auto_message_enabled')
-        .eq('id', personaId)
-        .single()
-      if (error || !data) throw error
-      setPersona(data)
-    } catch (err) {
-      console.error('Failed to load persona:', err)
-      router.push('/')
-    }
-  }
-
-  async function loadMessages() {
-    if (!personaId) return
-    try {
-      const { data: msgs, error } = await supabaseClient
-        .from('messages')
-        .select('id, role, content, message_type, is_auto_message, image_id, created_at')
-        .eq('persona_id', personaId)
-        .order('created_at', { ascending: true })
-        .limit(100)
-
-      if (error) throw error
-
-      const enriched: Message[] = await Promise.all((msgs ?? []).map(async (m) => {
-        messageIdsRef.current.add(m.id)
-        if (m.message_type === 'image' && m.image_id) {
-          try {
-            const { data: img } = await supabaseClient
-              .from('persona_images')
-              .select('public_url')
-              .eq('id', m.image_id)
-              .single()
-            return { ...m, image_url: img?.public_url ?? undefined }
-          } catch {
-            return { ...m }
-          }
-        }
-        return { ...m }
-      }))
-
-      setMessages(enriched)
-    } catch (err) {
-      console.error('Failed to load messages:', err)
-    }
-  }
-
-  function checkPushStatus() {
-    if (typeof window === 'undefined' || !('Notification' in window)) return
-    setPushEnabled(Notification.permission === 'granted')
-  }
 
   const enablePush = useCallback(async () => {
     setPushLoading(true)
@@ -180,32 +88,21 @@ export default function ChatPage() {
         alert('このブラウザはWeb Pushに対応していません。iOS 16.4以降のSafariをご使用ください。')
         return
       }
-
       const reg = await navigator.serviceWorker.register('/sw.js')
       await navigator.serviceWorker.ready
-
       const permission = await Notification.requestPermission()
-      if (permission !== 'granted') {
-        alert('通知が許可されませんでした。設定から許可してください。')
-        return
-      }
-
+      if (permission !== 'granted') { alert('通知が許可されませんでした。'); return }
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!),
       })
-
       const subJson = sub.toJSON()
       const res = await fetch('/api/push/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ endpoint: subJson.endpoint, keys: subJson.keys, userAgent: navigator.userAgent }),
       })
-
-      if (res.ok) {
-        setPushEnabled(true)
-        alert('通知が有効になりました。')
-      }
+      if (res.ok) { setPushEnabled(true); alert('通知が有効になりました。') }
     } catch (err) {
       console.error('Push registration failed:', err)
       alert('通知の設定に失敗しました。')
@@ -222,13 +119,7 @@ export default function ChatPage() {
 
     const tempId = `temp-${Date.now()}`
     messageIdsRef.current.add(tempId)
-    setMessages(prev => [...prev, {
-      id: tempId,
-      role: 'user',
-      content: text,
-      message_type: 'text',
-      created_at: new Date().toISOString(),
-    }])
+    setMessages(prev => [...prev, { id: tempId, role: 'user', content: text, message_type: 'text', created_at: new Date().toISOString() }])
 
     try {
       const res = await fetch('/api/chat', {
@@ -236,7 +127,6 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ persona_id: personaId, user_message: text }),
       })
-
       if (!res.ok) throw new Error(`API error: ${res.status}`)
       const data = await res.json()
 
@@ -244,19 +134,16 @@ export default function ChatPage() {
       setMessages(prev => {
         const filtered = prev.filter(m => m.id !== tempId)
         const newMsgs = [...filtered]
-
         if (data.reply) {
           const aiId = `ai-${Date.now()}`
           messageIdsRef.current.add(aiId)
           newMsgs.push({ id: aiId, role: 'assistant', content: data.reply, message_type: 'text', created_at: new Date().toISOString() })
         }
-
         if (data.image?.url) {
           const imgId = `img-${Date.now()}`
           messageIdsRef.current.add(imgId)
           newMsgs.push({ id: imgId, role: 'assistant', content: null, message_type: 'image', image_url: data.image.url, created_at: new Date().toISOString() })
         }
-
         return newMsgs
       })
     } catch (err) {
@@ -264,7 +151,7 @@ export default function ChatPage() {
       messageIdsRef.current.delete(tempId)
       setMessages(prev => prev.filter(m => m.id !== tempId))
       setInput(text)
-      alert('送信に失敗しました。もう一度試してください。')
+      alert('送信に失敗しました。')
     } finally {
       setSending(false)
     }
@@ -279,7 +166,6 @@ export default function ChatPage() {
   }
 
   const initials = persona.name.charAt(0).toUpperCase()
-
   const s = {
     container: { display: 'flex', flexDirection: 'column' as const, height: '100dvh', background: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
     header: { background: '#fff', borderBottom: '1px solid #e5e5ea', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 },
@@ -299,7 +185,7 @@ export default function ChatPage() {
     ts: { fontSize: 11, color: '#8e8e93', marginTop: 3 },
     inputArea: { background: '#fff', borderTop: '1px solid #e5e5ea', padding: '8px 16px 16px', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 },
     textarea: { flex: 1, border: '1px solid #d5d5d9', borderRadius: 20, padding: '8px 14px', fontSize: 15, resize: 'none' as const, outline: 'none', minHeight: 36, maxHeight: 100, lineHeight: 1.5, fontFamily: 'inherit', background: '#fff' },
-    sendBtn: { width: 36, height: 36, borderRadius: '50%', background: '#00b900', border: 'none', color: '#fff', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '600' },
+    sendBtn: { width: 36, height: 36, borderRadius: '50%', background: '#00b900', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '600' },
   }
 
   return (
@@ -311,12 +197,7 @@ export default function ChatPage() {
           <p style={s.headerName}>{persona.name}</p>
           <p style={s.headerStatus}>AIペルソナ</p>
         </div>
-        <button
-          style={s.pushBtn}
-          onClick={enablePush}
-          disabled={pushEnabled || pushLoading}
-          title={pushEnabled ? '通知オン' : '通知をオンにする'}
-        >
+        <button style={s.pushBtn} onClick={enablePush} disabled={pushEnabled || pushLoading} title={pushEnabled ? '通知オン' : '通知をオンにする'}>
           {pushEnabled ? '🔔' : '🔕'}
         </button>
       </div>
@@ -329,22 +210,16 @@ export default function ChatPage() {
                 <div style={s.avatarSmall}>{initials}</div>
                 <div>
                   {msg.message_type === 'image' && msg.image_url ? (
-                    <div style={s.imageBox}>
-                      <img src={msg.image_url} alt="画像" style={{ width: '100%', display: 'block' }} />
-                    </div>
+                    <div style={s.imageBox}><img src={msg.image_url} alt="画像" style={{ width: '100%', display: 'block' }} /></div>
                   ) : (
                     <div style={s.bubbleThem}>{msg.content}</div>
                   )}
-                  <p style={s.ts}>
-                    {new Date(msg.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
-                  </p>
+                  <p style={s.ts}>{new Date(msg.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}</p>
                 </div>
               </div>
             ) : (
               <div style={s.rowMe}>
-                <p style={{ ...s.ts, marginRight: 0 }}>
-                  {new Date(msg.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
-                </p>
+                <p style={{ ...s.ts, marginRight: 0 }}>{new Date(msg.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}</p>
                 <div style={s.bubbleMe}>{msg.content}</div>
               </div>
             )}
@@ -364,12 +239,7 @@ export default function ChatPage() {
           style={s.textarea}
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              handleSend()
-            }
-          }}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
           placeholder="メッセージを入力..."
           rows={1}
           disabled={sending}
@@ -387,8 +257,6 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
   const rawData = atob(base64)
   const outputArray = new Uint8Array(rawData.length)
-  for (let i = 0; i < rawData.length; i++) {
-    outputArray[i] = rawData.charCodeAt(i)
-  }
+  for (let i = 0; i < rawData.length; i++) outputArray[i] = rawData.charCodeAt(i)
   return outputArray
 }

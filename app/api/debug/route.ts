@@ -1,25 +1,21 @@
 import { NextResponse } from 'next/server'
 
 export async function GET() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? ''
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? ''
+  const serviceJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? ''
 
-  const isValidUrl = (s: string) => { try { new URL(s); return true } catch { return false } }
+  let serviceJsonValid = false
+  try {
+    const parsed = JSON.parse(serviceJson)
+    serviceJsonValid = !!(parsed.project_id && parsed.private_key && parsed.client_email)
+  } catch { /* invalid */ }
 
   return NextResponse.json({
-    NEXT_PUBLIC_SUPABASE_URL: {
-      set: url.length > 0,
-      valid_url: isValidUrl(url),
-      prefix: url.length > 0 ? url.substring(0, 12) + '...' : '(empty)',
-    },
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: {
-      set: anonKey.length > 0,
-      prefix: anonKey.length > 0 ? anonKey.substring(0, 8) + '...' : '(empty)',
-    },
-    SUPABASE_SERVICE_ROLE_KEY: {
-      set: serviceKey.length > 0,
-      prefix: serviceKey.length > 0 ? serviceKey.substring(0, 8) + '...' : '(empty)',
-    },
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID: { set: projectId.length > 0, value: projectId.length > 0 ? projectId : '(empty)' },
+    NEXT_PUBLIC_FIREBASE_API_KEY: { set: apiKey.length > 0, prefix: apiKey.length > 0 ? apiKey.substring(0, 6) + '...' : '(empty)' },
+    FIREBASE_SERVICE_ACCOUNT_JSON: { set: serviceJson.length > 0, valid: serviceJsonValid },
+    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: { set: !!(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET) },
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY: { set: !!(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) },
   })
 }

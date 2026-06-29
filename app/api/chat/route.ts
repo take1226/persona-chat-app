@@ -1,94 +1,93 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { chat, decideImageIndex } from '@/lib/ai-client'
-import { createServerClient } from '@/lib/supabase'
+import { adminDb } from '@/lib/firebase-admin'
+import { Timestamp } from 'firebase-admin/firestore'
 
 export async function POST(req: NextRequest) {
   const { persona_id, user_message } = await req.json()
-  const supabase = createServerClient()
+  const db = adminDb()
 
-  // 1. ペルソナ取得
-  const { data: persona } = await supabase
-    .from('personas')
-    .select('*')
-    .eq('id', persona_id)
-    .single()
-
-  if (!persona) {
+  const personaDoc = await db.collection('personas').doc(persona_id).get()
+  if (!personaDoc.exists) {
     return NextResponse.json({ error: 'Persona not found' }, { status: 404 })
   }
+  const persona = personaDoc.data()!
 
-  // 2. 直近の会話履歴（最大20件）
-  const { data: recentMessages } = await supabase
-    .from('messages')
-    .select('role, content, message_type, created_at')
-    .eq('persona_id', persona_id)
-    .order('created_at', { ascending: false })
+  const messagesSnap = await db
+    .collection('personas').doc(persona_id)
+    .collection('messages')
+    .orderBy('created_at', 'desc')
     .limit(20)
+    .get()
 
-  const history = (recentMessages ?? []).reverse().map(m => ({
-    role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
-    content: m.content ?? '[画像を送信]',
-  }))
+  const history = messagesSnap.docs.reverse().map(d => {
+    const m = d.data() as { role: string; content?: string }
+    return {
+      role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+      content: m.content ?? '[画像を送信]',
+    }
+  })
 
-  // 3. ユーザーメッセージを保存
-  await supabase.from('messages').insert({
-    persona_id,
+  const now = Timestamp.now()
+  await db.collection('personas').doc(persona_id).collection('messages').add({
     role: 'user',
     content: user_message,
     message_type: 'text',
+    is_auto_message: false,
+    created_at: now,
   })
 
-  // 4. 画像を送るべきか判断
-  const { data: images } = await supabase
-    .from('persona_images')
-    .select('id, public_url, category, description, tags, send_count')
-    .eq('persona_id', persona_id)
-    .order('send_count', { ascending: true })
+  const imagesSnap = await db
+    .collection('personas').doc(persona_id)
+    .collection('images')
+    .orderBy('send_count', 'asc')
     .limit(10)
+    .get()
 
-  let imageToSend = null
+  const images = imagesSnap.docs.map(d => ({ id: d.id, ...d.data() as {
+    public_url: string; category: string; description: string; tags?: string[]; send_count: number
+  }}))
 
-  if (images && images.length > 0) {
+  let imageToSend: (typeof images)[0] | null = null
+  if (images.length > 0) {
     const decision = await decideImageIndex(user_message, images)
-
     if (decision !== 'none') {
       const idx = parseInt(decision)
       if (!isNaN(idx) && images[idx]) {
         imageToSend = images[idx]
-        await supabase
-          .from('persona_images')
-          .update({ send_count: (imageToSend.send_count ?? 0) + 1 })
-          .eq('id', imageToSend.id)
+        await db.collection('personas').doc(persona_id).collection('images').doc(imageToSend.id).update({
+          send_count: (imageToSend.send_count ?? 0) + 1,
+        })
       }
     }
   }
 
-  // 5. AI テキスト返答生成
   const systemPrompt = persona.system_prompt ?? `あなたは${persona.name}として自然に会話してください。`
-
   const replyText = await chat(systemPrompt, history, user_message, 500)
 
-  // 6. 返答を保存
-  await supabase.from('messages').insert({
-    persona_id,
+  await db.collection('personas').doc(persona_id).collection('messages').add({
     role: 'assistant',
     content: replyText,
     message_type: 'text',
+    is_auto_message: false,
+    created_at: Timestamp.now(),
   })
 
-  // 7. 画像メッセージも保存
   if (imageToSend) {
-    await supabase.from('messages').insert({
-      persona_id,
+    await db.collection('personas').doc(persona_id).collection('messages').add({
       role: 'assistant',
       content: null,
-      image_id: imageToSend.id,
+      image_url: imageToSend.public_url,
       message_type: 'image',
+      is_auto_message: false,
+      created_at: Timestamp.now(),
     })
   }
 
+  await db.collection('personas').doc(persona_id).update({ updated_at: Timestamp.now() })
+
   return NextResponse.json({
     reply: replyText,
-    image: imageToSend ? { url: imageToSend.public_url, category: imageToSend.category } : null,
+    image: imageToSend ? { url: imageToSend.public_url } : null,
   })
 }

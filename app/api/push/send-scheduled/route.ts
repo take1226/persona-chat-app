@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { chat } from '@/lib/ai-client'
-import { createServerClient } from '@/lib/supabase'
+import { adminDb } from '@/lib/firebase-admin'
 import { sendPushToAll } from '@/lib/push'
+import { Timestamp } from 'firebase-admin/firestore'
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
@@ -9,92 +10,80 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const supabase = createServerClient()
-
-  const { data: personas } = await supabase
-    .from('personas')
-    .select('id, name, system_prompt, auto_message_enabled, auto_message_interval_min, auto_message_interval_max, last_auto_message_at')
-    .eq('auto_message_enabled', true)
-
-  if (!personas || personas.length === 0) {
-    return NextResponse.json({ ok: true, sent: 0 })
-  }
+  const db = adminDb()
+  const personasSnap = await db.collection('personas').where('auto_message_enabled', '==', true).get()
+  if (personasSnap.empty) return NextResponse.json({ ok: true, sent: 0 })
 
   const now = new Date()
   let sent = 0
 
-  for (const persona of personas) {
+  for (const personaDoc of personasSnap.docs) {
+    const persona = personaDoc.data() as {
+      name: string; system_prompt?: string;
+      auto_message_interval_min?: number; auto_message_interval_max?: number;
+      last_auto_message_at?: Timestamp;
+    }
+
     const minInterval = persona.auto_message_interval_min ?? 5
     const maxInterval = persona.auto_message_interval_max ?? 30
 
     if (persona.last_auto_message_at) {
-      const lastSent = new Date(persona.last_auto_message_at)
-      const diffMinutes = (now.getTime() - lastSent.getTime()) / 1000 / 60
-
+      const lastSent = persona.last_auto_message_at.toDate()
+      const diffMinutes = (now.getTime() - lastSent.getTime()) / 60000
       if (diffMinutes < minInterval) continue
-
       const probability = Math.min((diffMinutes - minInterval) / (maxInterval - minInterval), 1.0)
       if (Math.random() > probability) continue
     }
 
-    const { data: recentMessages } = await supabase
-      .from('messages')
-      .select('role, content, created_at')
-      .eq('persona_id', persona.id)
-      .order('created_at', { ascending: false })
+    const recentSnap = await db
+      .collection('personas').doc(personaDoc.id)
+      .collection('messages')
+      .orderBy('created_at', 'desc')
       .limit(10)
+      .get()
 
-    const history = (recentMessages ?? []).reverse().map(m => ({
-      role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
-      content: m.content ?? '[画像]',
-    }))
+    const history = recentSnap.docs.reverse().map(d => {
+      const m = d.data() as { role: string; content?: string }
+      return { role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant', content: m.content ?? '[画像]' }
+    })
 
-    const lastMessageTime = recentMessages?.[0]?.created_at
-    const minutesSinceLastMessage = lastMessageTime
-      ? Math.floor((now.getTime() - new Date(lastMessageTime).getTime()) / 1000 / 60)
+    const lastMsg = recentSnap.docs[0]?.data() as { created_at?: Timestamp } | undefined
+    const minutesSince = lastMsg?.created_at
+      ? Math.floor((now.getTime() - lastMsg.created_at.toDate().getTime()) / 60000)
       : 999
 
     const systemPrompt = `${persona.system_prompt ?? `あなたは${persona.name}として振る舞ってください。`}
 
 【追加指示】
-あなたは今、相手に自分から連絡を取ろうとしています。
-最後のメッセージから約${minutesSinceLastMessage}分経っています。
-この人物らしい、自然な「自発的なメッセージ」を1〜2文で送ってください。
-例：何かふと思い出したこと、今の状況の報告、軽い質問、など。
-返答は送るメッセージ本文のみ。説明不要。`
+あなたは今、相手に自分から連絡を取ろうとしています。最後のメッセージから約${minutesSince}分経っています。
+この人物らしい、自然な「自発的なメッセージ」を1〜2文で送ってください。返答は送るメッセージ本文のみ。`
 
     let autoMessage = ''
     try {
-      const triggerMsg = history.length > 0 ? '（しばらく時間が経ちました）' : '（久しぶりに連絡します）'
-      autoMessage = await chat(systemPrompt, history, triggerMsg, 200)
-    } catch {
-      continue
-    }
+      const trigger = history.length > 0 ? '（しばらく時間が経ちました）' : '（久しぶりに連絡します）'
+      autoMessage = await chat(systemPrompt, history, trigger, 200)
+    } catch { continue }
 
     if (!autoMessage) continue
 
-    await supabase.from('messages').insert({
-      persona_id: persona.id,
+    await db.collection('personas').doc(personaDoc.id).collection('messages').add({
       role: 'assistant',
       content: autoMessage,
       message_type: 'text',
       is_auto_message: true,
+      created_at: Timestamp.now(),
     })
 
-    await supabase
-      .from('personas')
-      .update({ last_auto_message_at: now.toISOString() })
-      .eq('id', persona.id)
+    await personaDoc.ref.update({ last_auto_message_at: Timestamp.now() })
 
     await sendPushToAll({
       title: persona.name,
       body: autoMessage,
-      persona_id: persona.id,
-      url: `/persona/${persona.id}`,
+      persona_id: personaDoc.id,
+      url: `/persona/${personaDoc.id}`,
       icon: '/icon-192.png',
     })
 
-    console.log(`[auto-message] ${persona.name}: ${autoMessage.substring(0, 30)}...`)
     sent++
   }
 

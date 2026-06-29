@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { visionOCR } from '@/lib/ai-client'
-import { createServerClient } from '@/lib/supabase'
+import { adminDb, adminBucket } from '@/lib/firebase-admin'
+import { Timestamp } from 'firebase-admin/firestore'
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData()
@@ -8,22 +9,20 @@ export async function POST(req: NextRequest) {
   const personaId = formData.get('persona_id') as string
   const sourceType = formData.get('source_type') as string
 
-  const supabase = createServerClient()
   const bytes = await file.arrayBuffer()
   const buffer = Buffer.from(bytes)
   const storagePath = `${personaId}/${Date.now()}_${file.name}`
 
-  // Supabase Storage にアップロード
-  const { error: uploadError } = await supabase.storage
-    .from(process.env.STORAGE_BUCKET_UPLOADS!)
-    .upload(storagePath, buffer, { contentType: file.type })
-
-  if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 500 })
+  let publicUrl = ''
+  try {
+    const fileRef = adminBucket().file(storagePath)
+    await fileRef.save(buffer, { contentType: file.type, public: true })
+    publicUrl = fileRef.publicUrl()
+  } catch (err) {
+    console.error('Storage upload failed:', err)
   }
 
   const base64 = buffer.toString('base64')
-
   let rawText = ''
   let confidence = 0.5
 
@@ -38,22 +37,18 @@ export async function POST(req: NextRequest) {
     confidence = 0
   }
 
-  const { data, error: dbError } = await supabase
-    .from('upload_sources')
-    .insert({
-      persona_id: personaId,
+  const ref = await adminDb()
+    .collection('personas').doc(personaId)
+    .collection('uploads')
+    .add({
       source_type: sourceType,
       storage_path: storagePath,
+      public_url: publicUrl,
       raw_text: rawText,
       ocr_confidence: confidence,
       processed: false,
+      created_at: Timestamp.now(),
     })
-    .select()
-    .single()
 
-  if (dbError) {
-    return NextResponse.json({ error: dbError.message }, { status: 500 })
-  }
-
-  return NextResponse.json({ success: true, source: data, extracted_text: rawText })
+  return NextResponse.json({ success: true, id: ref.id, extracted_text: rawText })
 }

@@ -1,5 +1,5 @@
 import webpush from 'web-push'
-import { createServerClient } from './supabase'
+import { adminDb } from './firebase-admin'
 
 let _vapidSet = false
 
@@ -24,12 +24,10 @@ export type PushPayload = {
 
 export async function sendPushToAll(payload: PushPayload): Promise<void> {
   ensureVapid()
-  const supabase = createServerClient()
-  const { data: subs } = await supabase
-    .from('push_subscriptions')
-    .select('id, endpoint, p256dh, auth')
+  const snap = await adminDb().collection('push_subscriptions').get()
+  if (snap.empty) return
 
-  if (!subs || subs.length === 0) return
+  const subs = snap.docs.map(d => ({ id: d.id, ...d.data() as { endpoint: string; p256dh: string; auth: string } }))
 
   const results = await Promise.allSettled(
     subs.map(sub =>
@@ -40,18 +38,13 @@ export async function sendPushToAll(payload: PushPayload): Promise<void> {
     )
   )
 
-  // 失敗したサブスクリプション（410 Gone = 登録解除済み）を削除
   const toDelete: string[] = []
   results.forEach((result, i) => {
     if (result.status === 'rejected') {
       const err = result.reason as { statusCode?: number }
-      if (err?.statusCode === 410) {
-        toDelete.push(subs[i].id)
-      }
+      if (err?.statusCode === 410) toDelete.push(subs[i].id)
     }
   })
 
-  if (toDelete.length > 0) {
-    await supabase.from('push_subscriptions').delete().in('id', toDelete)
-  }
+  await Promise.all(toDelete.map(id => adminDb().collection('push_subscriptions').doc(id).delete()))
 }
