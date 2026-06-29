@@ -1,13 +1,13 @@
 import type { Metadata, Viewport } from 'next'
 
 export const metadata: Metadata = {
-  title: 'トークアプリ',
+  title: 'Echo',
   description: 'AIペルソナチャット',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'トークアプリ',
+    title: 'Echo',
   },
   icons: {
     apple: '/icon-192.png',

@@ -7,6 +7,7 @@ import { collection, getDocs, query, orderBy, onSnapshot, limit, Timestamp } fro
 type Persona = {
   id: string
   name: string
+  avatar_url?: string
   profile: { relationship?: string }
   auto_message_enabled: boolean
   lastMessage?: string
@@ -16,6 +17,7 @@ type Persona = {
 export default function HomePage() {
   const [personas, setPersonas] = useState<Persona[]>([])
   const [loading, setLoading] = useState(true)
+  const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
@@ -24,7 +26,10 @@ export default function HomePage() {
       try {
         const withMessages = await Promise.all(snap.docs.map(async (d) => {
           const data = d.data() as {
-            name: string; profile: { relationship?: string }; auto_message_enabled: boolean
+            name: string
+            avatar_url?: string
+            profile: { relationship?: string }
+            auto_message_enabled: boolean
           }
           const msgSnap = await getDocs(
             query(collection(db, 'personas', d.id, 'messages'), orderBy('created_at', 'desc'), limit(1))
@@ -50,18 +55,32 @@ export default function HomePage() {
     return () => unsubscribe()
   }, [])
 
+  async function deletePersona(personaId: string) {
+    if (!confirm('このペルソナを削除しますか？')) return
+    try {
+      await fetch(`/api/persona/${personaId}/delete`, { method: 'DELETE' })
+      setMenuOpen(null)
+    } catch {
+      alert('削除に失敗しました')
+    }
+  }
+
   const s = {
     page: { display: 'flex', flexDirection: 'column' as const, height: '100dvh', background: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
     header: { background: '#fff', padding: '12px 16px', borderBottom: '1px solid #e5e5ea', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 },
     title: { fontSize: 32, fontWeight: '700', margin: 0, color: '#000' },
-    addBtn: { background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', padding: '4px 8px', color: '#00b900' },
+    headerActions: { display: 'flex', gap: 4 },
+    iconBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 8px', color: '#00b900' },
     list: { flex: 1, overflowY: 'auto' as const },
-    item: { display: 'flex', alignItems: 'center', padding: '10px 16px', borderBottom: '1px solid #e5e5ea', cursor: 'pointer', background: '#fff', transition: 'background 0.1s' },
-    avatar: { width: 56, height: 56, borderRadius: '50%', background: '#00b900', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: '#fff', fontWeight: '600', flexShrink: 0, marginRight: 12 },
+    item: { display: 'flex', alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid #e5e5ea', cursor: 'pointer', background: '#fff' },
+    avatar: { width: 54, height: 54, borderRadius: '50%', background: '#00b900', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: '#fff', fontWeight: '600', flexShrink: 0, marginRight: 12, overflow: 'hidden' },
     content: { flex: 1, minWidth: 0 },
     name: { fontSize: 16, fontWeight: '500', margin: '0 0 3px 0', color: '#000' },
     preview: { fontSize: 13, color: '#8e8e93', margin: 0, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
     time: { fontSize: 12, color: '#8e8e93', flexShrink: 0, marginLeft: 8 },
+    menuBtn: { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#c0c0c0', padding: '4px 6px', flexShrink: 0 },
+    menuPanel: { background: '#f9f9f9', borderBottom: '1px solid #e5e5ea', padding: '8px 12px', display: 'flex', gap: 8 },
+    menuActionBtn: { flex: 1, padding: '9px', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: '600', cursor: 'pointer' },
     empty: { flex: 1, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' as const, color: '#8e8e93' },
   }
 
@@ -74,11 +93,14 @@ export default function HomePage() {
   }
 
   return (
-    <div style={s.page}>
+    <div style={s.page} onClick={() => menuOpen && setMenuOpen(null)}>
       <div style={s.header}>
         <h1 style={s.title}>チャット</h1>
-        <button style={s.addBtn} onClick={() => router.push('/persona/new')} title="新規追加">✎</button>
+        <div style={s.headerActions}>
+          <button style={s.iconBtn} onClick={() => router.push('/persona/new')} title="新規追加">✎</button>
+        </div>
       </div>
+
       {personas.length === 0 ? (
         <div style={s.empty}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>💬</div>
@@ -90,16 +112,48 @@ export default function HomePage() {
       ) : (
         <div style={s.list}>
           {personas.map(p => (
-            <div key={p.id} style={s.item} onClick={() => router.push(`/persona/${p.id}`)}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f2f2f7' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#fff' }}
-            >
-              <div style={s.avatar}>{p.name.charAt(0)}</div>
-              <div style={s.content}>
-                <p style={s.name}>{p.name}</p>
-                <p style={s.preview}>{p.lastMessage || 'トークを開始'}</p>
+            <div key={p.id}>
+              <div
+                style={s.item}
+                onClick={() => { if (menuOpen === p.id) { setMenuOpen(null); return } router.push(`/persona/${p.id}`) }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#f2f2f7' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#fff' }}
+              >
+                <div style={s.avatar}>
+                  {p.avatar_url
+                    ? <img src={p.avatar_url} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : p.name.charAt(0)
+                  }
+                </div>
+                <div style={s.content}>
+                  <p style={s.name}>{p.name}</p>
+                  <p style={s.preview}>{p.lastMessage || 'トークを開始'}</p>
+                </div>
+                {p.lastMessageTime && <div style={s.time}>{p.lastMessageTime}</div>}
+                <button
+                  style={s.menuBtn}
+                  onClick={e => { e.stopPropagation(); setMenuOpen(menuOpen === p.id ? null : p.id) }}
+                >
+                  ⋮
+                </button>
               </div>
-              {p.lastMessageTime && <div style={s.time}>{p.lastMessageTime}</div>}
+
+              {menuOpen === p.id && (
+                <div style={s.menuPanel} onClick={e => e.stopPropagation()}>
+                  <button style={{ ...s.menuActionBtn, background: '#f2f2f7', color: '#000' }}
+                    onClick={() => { router.push(`/persona/${p.id}/settings`); setMenuOpen(null) }}>
+                    ✏️ 編集
+                  </button>
+                  <button style={{ ...s.menuActionBtn, background: '#ffebee', color: '#d32f2f' }}
+                    onClick={() => deletePersona(p.id)}>
+                    🗑 削除
+                  </button>
+                  <button style={{ ...s.menuActionBtn, background: '#fff', color: '#8e8e93', border: '1px solid #e5e5ea' }}
+                    onClick={() => setMenuOpen(null)}>
+                    ✕
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

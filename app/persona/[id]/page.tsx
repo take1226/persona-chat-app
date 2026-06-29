@@ -34,9 +34,6 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false)
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushLoading, setPushLoading] = useState(false)
-  const [showImportModal, setShowImportModal] = useState(false)
-  const [importUploading, setImportUploading] = useState(false)
-  const [importStatus, setImportStatus] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const messageIdsRef = useRef<Set<string>>(new Set())
 
@@ -160,36 +157,6 @@ export default function ChatPage() {
     }
   }
 
-  async function handleImportUpload(files: FileList | null) {
-    if (!files || files.length === 0 || !personaId) return
-    setImportUploading(true)
-    setImportStatus('アップロード中...')
-    try {
-      for (const file of Array.from(files)) {
-        const isImage = file.type.startsWith('image/')
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('persona_id', personaId)
-        formData.append('source_type', isImage ? 'screenshot' : 'text')
-        const endpoint = isImage ? '/api/upload/image' : '/api/upload/text'
-        await fetch(endpoint, { method: 'POST', body: formData }).catch(() => {})
-        setImportStatus(`✅ ${file.name} 処理済み`)
-      }
-      // バックグラウンドでペルソナを再生成
-      fetch('/api/persona/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ persona_id: personaId, profile: persona }),
-      }).catch(() => {})
-      setImportStatus('✅ 完了！ペルソナを更新中です（バックグラウンド）')
-      setTimeout(() => { setImportStatus(''); setShowImportModal(false) }, 2000)
-    } catch {
-      setImportStatus('⚠️ 一部エラーがありましたが処理を続けました')
-    } finally {
-      setImportUploading(false)
-    }
-  }
-
   if (!personaId || !persona) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100dvh' }}>
@@ -220,9 +187,6 @@ export default function ChatPage() {
     textarea: { flex: 1, border: '1px solid #d5d5d9', borderRadius: 20, padding: '8px 14px', fontSize: 15, resize: 'none' as const, outline: 'none', minHeight: 36, maxHeight: 100, lineHeight: 1.5, fontFamily: 'inherit', background: '#fff' },
     sendBtn: { width: 36, height: 36, borderRadius: '50%', background: '#00b900', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '600' },
     settingsBtn: { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 6px', color: '#8e8e93', lineHeight: 1 },
-    modalOverlay: { position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' },
-    modal: { background: '#fff', borderRadius: '20px 20px 0 0', padding: '24px 20px 40px', width: '100%', maxWidth: 480 },
-    uploadZoneSmall: { background: '#f2f2f7', border: '2px dashed #d5d5d9', borderRadius: 12, padding: '28px 20px', textAlign: 'center' as const, cursor: 'pointer', display: 'block', marginTop: 12 },
   }
 
   return (
@@ -237,42 +201,10 @@ export default function ChatPage() {
         <button style={s.pushBtn} onClick={enablePush} disabled={pushEnabled || pushLoading} title={pushEnabled ? '通知オン' : '通知をオンにする'}>
           {pushEnabled ? '🔔' : '🔕'}
         </button>
-        <button style={s.settingsBtn} onClick={() => setShowImportModal(true)} title="履歴を追加">
+        <button style={s.settingsBtn} onClick={() => router.push(`/persona/${personaId}/settings`)} title="設定">
           ⚙️
         </button>
       </div>
-
-      {showImportModal && (
-        <div style={s.modalOverlay} onClick={() => !importUploading && setShowImportModal(false)}>
-          <div style={s.modal} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: '700' }}>履歴を追加</h3>
-              <button style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#8e8e93', padding: 0 }} onClick={() => setShowImportModal(false)} disabled={importUploading}>✕</button>
-            </div>
-            <p style={{ fontSize: 14, color: '#65676b', margin: '0 0 4px', lineHeight: 1.6 }}>
-              LINEや Instagram のスクショを追加すると、ペルソナがより精度よく話せるようになります。
-            </p>
-            {importStatus && (
-              <div style={{ fontSize: 13, color: '#2e7d32', padding: '8px 12px', background: '#f0f9f0', borderRadius: 8, marginBottom: 8, lineHeight: 1.6 }}>
-                {importStatus}
-              </div>
-            )}
-            <label style={{ ...s.uploadZoneSmall, opacity: importUploading ? 0.6 : 1 }}>
-              <div style={{ fontSize: 32, marginBottom: 6 }}>📸</div>
-              <div style={{ fontSize: 15, fontWeight: '600', color: '#000', marginBottom: 4 }}>スクショ・テキストを選択</div>
-              <div style={{ fontSize: 12, color: '#8e8e93' }}>画像 / テキスト (.txt, .csv) / 複数可</div>
-              <input
-                type="file"
-                multiple
-                accept=".txt,.csv,image/*"
-                style={{ display: 'none' }}
-                onChange={e => handleImportUpload(e.target.files)}
-                disabled={importUploading}
-              />
-            </label>
-          </div>
-        </div>
-      )}
 
       <div style={s.messageList}>
         {messages.map(msg => (
