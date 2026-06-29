@@ -58,9 +58,25 @@ export default function NewPersonaPage() {
       body: JSON.stringify({ persona_id: personaId, profile }),
     }).catch(e => console.warn('create warn:', e))
 
-    setStatusMsg('✅ 準備完了！チャット画面へ移動します...')
+    // 人物特性を多次元分析（失敗しても続行）
+    setStatusMsg('🧠 人物特性を分析中...')
+    try {
+      const analysisRes = await fetch('/api/persona/analyze-personality', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ persona_id: personaId }),
+      })
+      if (analysisRes.ok) {
+        setStatusMsg('✅ ペルソナの特性を学習しました！チャット画面へ移動します...')
+      } else {
+        setStatusMsg('✅ 準備完了！チャット画面へ移動します...')
+      }
+    } catch {
+      setStatusMsg('✅ 準備完了！チャット画面へ移動します...')
+    }
+
     setUploading(false)
-    setTimeout(() => router.push(`/persona/${personaId}`), 600)
+    setTimeout(() => router.push(`/persona/${personaId}`), 800)
   }
 
   async function skipToChat() {

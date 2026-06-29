@@ -28,6 +28,7 @@ export default function PersonaSettingsPage() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null)
   const [importStatus, setImportStatus] = useState('')
   const [importing, setImporting] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
 
   const [form, setForm] = useState({
     name: '',
@@ -126,6 +127,30 @@ export default function PersonaSettingsPage() {
       setImportStatus('⚠️ 一部エラーがありましたが処理を続けました')
     } finally {
       setImporting(false)
+    }
+  }
+
+  async function reanalyzePersonality() {
+    if (!personaId) return
+    setAnalyzing(true)
+    setImportStatus('🧠 人物特性を分析中...')
+    try {
+      const res = await fetch('/api/persona/analyze-personality', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ persona_id: personaId }),
+      })
+      if (res.ok) {
+        setImportStatus('✅ 人物分析を更新しました！')
+      } else {
+        const data = await res.json()
+        setImportStatus(`⚠️ ${data.message ?? '分析に失敗しました'}`)
+      }
+    } catch {
+      setImportStatus('⚠️ エラーが発生しました')
+    } finally {
+      setAnalyzing(false)
+      setTimeout(() => setImportStatus(''), 3000)
     }
   }
 
@@ -269,6 +294,13 @@ export default function PersonaSettingsPage() {
             <input type="file" multiple accept=".txt,.csv,image/*" style={{ display: 'none' }}
               onChange={e => handleImportUpload(e.target.files)} disabled={importing} />
           </label>
+          <button
+            style={{ width: '100%', padding: '10px', background: '#007aff', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: '600', cursor: 'pointer', marginTop: 10, opacity: analyzing ? 0.6 : 1 }}
+            onClick={reanalyzePersonality}
+            disabled={analyzing}
+          >
+            {analyzing ? '分析中...' : '🧠 人物特性を再分析'}
+          </button>
         </div>
 
         {/* 保存 */}

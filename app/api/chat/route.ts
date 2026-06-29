@@ -3,6 +3,43 @@ import { chat, decideImageIndex } from '@/lib/ai-client'
 import { adminDb } from '@/lib/firebase-admin'
 import { Timestamp } from 'firebase-admin/firestore'
 
+interface RawAnalysis {
+  tone?: string
+  commonPhrases?: string[]
+  emotionalTendency?: 'positive' | 'neutral' | 'negative'
+  detailLevel?: 'concise' | 'moderate' | 'detailed'
+  textExamples?: string[]
+  comprehensivePrompt?: string
+}
+
+function buildSystemPrompt(name: string, basePrompt: string, rawAnalysis?: RawAnalysis): string {
+  if (!rawAnalysis || !rawAnalysis.comprehensivePrompt) {
+    return `${basePrompt}\n\n【返答ルール】\n- 1〜3文で返す（50字以内が目安）\n- 説明・解説は不要。会話だけ。\n- 相手のトーンに合わせる`
+  }
+
+  const phrases = rawAnalysis.commonPhrases?.slice(0, 3).join('、') || 'なし'
+  const examples = (rawAnalysis.textExamples ?? []).slice(0, 3).map(ex => `・${ex}`).join('\n')
+  const moodNote = rawAnalysis.emotionalTendency === 'positive' ? 'ポジティブで楽観的'
+    : rawAnalysis.emotionalTendency === 'negative' ? 'やや悲観的'
+    : '中立的'
+
+  return `あなたは${name}として返答します。以下の特性を完全に再現してください。
+
+【${name}の特性】
+- 口調: ${rawAnalysis.tone || 'カジュアル'}
+- 口癖・よく使う表現: ${phrases}
+- 感情傾向: ${moodNote}
+
+【実際の会話例】
+${examples || 'なし'}
+
+【返答ルール】
+- 返答は1〜2文、50字以内が原則
+- ${phrases}などを自然に使う
+- 説明・解説は不要。会話だけ。
+- AIらしい丁寧さは避ける（${moodNote}で人間らしく）`
+}
+
 export async function POST(req: NextRequest) {
   const { persona_id, user_message } = await req.json()
   const db = adminDb()
@@ -41,18 +78,20 @@ export async function POST(req: NextRequest) {
   }))
 
   const basePrompt = persona.behavior_prompt || persona.system_prompt || `あなたは${persona.name}として自然に会話してください。`
-  const systemPrompt = `${basePrompt}
-
-【返答ルール】
-- 1〜3文で返す（50字以内が目安）
-- 説明・解説は不要。会話だけ。
-- 相手のトーンに合わせる`
+  const systemPrompt = buildSystemPrompt(persona.name, basePrompt, persona.raw_analysis)
 
   // Parallel: generate AI text reply and decide on image simultaneously
-  const [replyText, imageDecision] = await Promise.all([
-    chat(systemPrompt, history, user_message, 150),
+  const [rawReplyText, imageDecision] = await Promise.all([
+    chat(systemPrompt, history, user_message, 80),
     images.length > 0 ? decideImageIndex(user_message, images) : Promise.resolve('none'),
   ])
+
+  // Trim to 1-2 sentences if too long
+  let replyText = rawReplyText
+  if (replyText.length > 100) {
+    const sentences = replyText.split(/(?<=[。！？\n])/).filter(s => s.trim())
+    replyText = sentences.slice(0, 2).join('').trim()
+  }
 
   const imageToSend = imageDecision !== 'none'
     ? (() => { const idx = parseInt(imageDecision); return !isNaN(idx) && images[idx] ? images[idx] : null })()
