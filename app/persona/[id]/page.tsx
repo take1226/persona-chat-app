@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { db } from '@/lib/firebase'
-import { collection, query, orderBy, onSnapshot, doc, getDoc, Timestamp } from 'firebase/firestore'
+import { collection, query, orderBy, onSnapshot, doc, getDoc, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore'
 
 type Message = {
   id: string
@@ -117,39 +117,32 @@ export default function ChatPage() {
     setInput('')
     setSending(true)
 
-    const tempId = `temp-${Date.now()}`
-    messageIdsRef.current.add(tempId)
-    setMessages(prev => [...prev, { id: tempId, role: 'user', content: text, message_type: 'text', created_at: new Date().toISOString() }])
-
+    let savedMsgId: string | null = null
     try {
+      // Save user message directly from client → get real Firestore ID immediately
+      const ref = await addDoc(
+        collection(db, 'personas', personaId, 'messages'),
+        { role: 'user', content: text, message_type: 'text', is_auto_message: false, created_at: serverTimestamp() }
+      )
+      savedMsgId = ref.id
+      // Register real ID so onSnapshot skips it (prevents duplicate)
+      messageIdsRef.current.add(savedMsgId)
+      // Show message immediately with the real Firestore ID
+      setMessages(prev => [...prev, { id: savedMsgId!, role: 'user', content: text, message_type: 'text', created_at: new Date().toISOString() }])
+
+      // Call API — AI reply is saved to Firestore by the API, onSnapshot picks it up
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ persona_id: personaId, user_message: text }),
       })
       if (!res.ok) throw new Error(`API error: ${res.status}`)
-      const data = await res.json()
-
-      messageIdsRef.current.delete(tempId)
-      setMessages(prev => {
-        const filtered = prev.filter(m => m.id !== tempId)
-        const newMsgs = [...filtered]
-        if (data.reply) {
-          const aiId = `ai-${Date.now()}`
-          messageIdsRef.current.add(aiId)
-          newMsgs.push({ id: aiId, role: 'assistant', content: data.reply, message_type: 'text', created_at: new Date().toISOString() })
-        }
-        if (data.image?.url) {
-          const imgId = `img-${Date.now()}`
-          messageIdsRef.current.add(imgId)
-          newMsgs.push({ id: imgId, role: 'assistant', content: null, message_type: 'image', image_url: data.image.url, created_at: new Date().toISOString() })
-        }
-        return newMsgs
-      })
     } catch (err) {
       console.error('Send failed:', err)
-      messageIdsRef.current.delete(tempId)
-      setMessages(prev => prev.filter(m => m.id !== tempId))
+      if (savedMsgId) {
+        messageIdsRef.current.delete(savedMsgId)
+        setMessages(prev => prev.filter(m => m.id !== savedMsgId))
+      }
       setInput(text)
       alert('送信に失敗しました。')
     } finally {
