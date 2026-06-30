@@ -100,7 +100,7 @@ export default function NewPersonaPage() {
 
   return (
     <div style={s.page}>
-      <div style={{ background: '#fff', borderBottom: '1px solid #e5e5ea', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ background: '#fff', borderBottom: '1px solid #e5e5ea', padding: 'calc(env(safe-area-inset-top) + 10px) 16px 10px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <button style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#00b900', lineHeight: 1, padding: '4px 6px 4px 0' }} onClick={() => router.back()}>‹</button>
         <span style={{ fontSize: 17, fontWeight: '600' }}>ペルソナを追加</span>
       </div>

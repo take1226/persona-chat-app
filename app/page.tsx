@@ -67,7 +67,7 @@ export default function HomePage() {
 
   const s = {
     page: { display: 'flex', flexDirection: 'column' as const, height: '100dvh', background: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
-    header: { background: '#fff', padding: '12px 16px', borderBottom: '1px solid #e5e5ea', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 },
+    header: { background: '#fff', padding: 'calc(env(safe-area-inset-top) + 12px) 16px 12px', borderBottom: '1px solid #e5e5ea', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 },
     title: { fontSize: 32, fontWeight: '700', margin: 0, color: '#000' },
     headerActions: { display: 'flex', gap: 4 },
     iconBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 8px', color: '#06c755' },

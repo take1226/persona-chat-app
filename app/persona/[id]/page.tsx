@@ -78,9 +78,7 @@ export default function ChatPage() {
           image_url: data.image_url,
           created_at: data.created_at?.toDate().toISOString() ?? new Date().toISOString(),
         }
-        if (messageIdsRef.current.has(msg.id)) return
-        messageIdsRef.current.add(msg.id)
-        setMessages(prev => [...prev, msg])
+        setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg])
       })
     })
     return () => unsubscribe()
@@ -135,8 +133,7 @@ export default function ChatPage() {
         { role: 'user', content: text, message_type: 'text', is_auto_message: false, created_at: serverTimestamp() }
       )
       savedMsgId = ref.id
-      messageIdsRef.current.add(savedMsgId)
-      setMessages(prev => [...prev, {
+      setMessages(prev => prev.some(m => m.id === savedMsgId) ? prev : [...prev, {
         id: savedMsgId!, role: 'user', content: text,
         message_type: 'text', created_at: new Date().toISOString(),
       }])
@@ -218,7 +215,7 @@ export default function ChatPage() {
 
   const s = {
     container: { display: 'flex', flexDirection: 'column' as const, height: '100dvh', background: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
-    header: { background: '#fff', borderBottom: '1px solid #e5e5ea', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 },
+    header: { background: '#fff', borderBottom: '1px solid #e5e5ea', padding: 'calc(env(safe-area-inset-top) + 10px) 16px 10px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 },
     backBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 6px 4px 0', color: '#06c755', lineHeight: 1 },
     avatar: { width: 40, height: 40, borderRadius: '50%', background: '#06c755', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#fff', fontWeight: '600', flexShrink: 0 },
     headerInfo: { flex: 1 },
@@ -226,7 +223,7 @@ export default function ChatPage() {
     headerStatus: { fontSize: 12, color: '#8e8e93', margin: '2px 0 0' },
     pushBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 6px', color: '#06c755' },
     messageList: { flex: 1, overflowY: 'auto' as const, padding: '12px 16px', display: 'flex', flexDirection: 'column' as const, gap: 6 },
-    inputArea: { background: '#fff', borderTop: '1px solid #e5e5ea', padding: '8px 16px 16px', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 },
+    inputArea: { background: '#fff', borderTop: '1px solid #e5e5ea', padding: '8px 16px calc(env(safe-area-inset-bottom) + 16px)', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 },
     textarea: { flex: 1, border: '1px solid #d5d5d9', borderRadius: 20, padding: '8px 14px', fontSize: 15, resize: 'none' as const, outline: 'none', minHeight: 36, maxHeight: 100, lineHeight: 1.5, fontFamily: 'inherit', background: '#fff' },
     sendBtn: { width: 36, height: 36, borderRadius: '50%', background: '#06c755', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '600' },
     settingsBtn: { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 6px', color: '#8e8e93', lineHeight: 1 },

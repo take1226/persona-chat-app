@@ -175,7 +175,7 @@ export default function PersonaSettingsPage() {
 
   const s = {
     page: { minHeight: '100dvh', background: '#f2f2f7', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
-    header: { background: '#fff', borderBottom: '1px solid #e5e5ea', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, position: 'sticky' as const, top: 0, zIndex: 10 },
+    header: { background: '#fff', borderBottom: '1px solid #e5e5ea', padding: 'calc(env(safe-area-inset-top) + 10px) 16px 10px', display: 'flex', alignItems: 'center', gap: 12, position: 'sticky' as const, top: 0, zIndex: 10 },
     backBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#00b900', lineHeight: 1, padding: '4px 6px 4px 0' },
     headerTitle: { fontSize: 17, fontWeight: '600', margin: 0, flex: 1 },
     container: { maxWidth: 480, margin: '0 auto', padding: '16px' },

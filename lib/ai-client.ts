@@ -1,6 +1,14 @@
 // SERVER-ONLY — クライアントコードから import しない
 import { getAI, MODEL, VISION_MODEL } from './gemini'
 
+function stripStopTokens(text: string): string {
+  return (text ?? '')
+    .replace(/<\|?\s*(?:end\s*of\s*text|endoftext|eot_id|im_end|im_start|eos|stop)\s*\|?>/gi, '')
+    .replace(/<\/?s>/gi, '')
+    .replace(/\[(?:END|EOS|DONE)\]/gi, '')
+    .trim()
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
@@ -26,7 +34,7 @@ export async function chat(
       contents,
       config: { systemInstruction: systemPrompt, maxOutputTokens: maxTokens },
     })
-    return response.text ?? ''
+    return stripStopTokens(response.text ?? '')
   } catch (err) {
     console.error('[ai-client] chat error:', err)
     return ''
@@ -41,7 +49,7 @@ export async function generate(prompt: string, maxTokens = 2000): Promise<string
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: { maxOutputTokens: maxTokens },
     })
-    return response.text ?? ''
+    return stripStopTokens(response.text ?? '')
   } catch (err) {
     console.error('[ai-client] generate error:', err)
     return ''
