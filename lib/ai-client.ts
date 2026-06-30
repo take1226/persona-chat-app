@@ -9,11 +9,23 @@ function stripStopTokens(text: string): string {
     .trim()
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+// タイムアウト付き Promise ラッパー（外部でも使用可能）
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
   return Promise.race([
     promise,
     new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), ms)),
   ])
+}
+
+// AI が返したテキストが「エラー・待機の定型文」かどうかを判定
+function looksLikeSuspiciousResponse(text: string): boolean {
+  if (!text || text.trim().length < 2) return true
+  const patterns = [
+    /ちょっと待って/, /少々お待ち/, /しばらくお待ち/, /please wait/i,
+    /rate.?limit/i, /too many requests/i, /try again/i, /一時的に/, /混雑/,
+    /申し訳ありません.*しばらく/, /サービスが/, /エラーが発生/,
+  ]
+  return patterns.some(p => p.test(text))
 }
 
 interface ChatMessage {
@@ -48,18 +60,22 @@ export async function chat(
   }
 }
 
+// 怪しいレスポンスを弾いて最大2回リトライする
 export async function chatWithRetry(
   systemPrompt: string,
   history: ChatMessage[],
   userMessage: string,
   maxTokens = 500,
-  timeoutMs = 20000,
 ): Promise<string> {
-  const attempt = () => withTimeout(chat(systemPrompt, history, userMessage, maxTokens), timeoutMs)
-  const first = await attempt()
-  if (first) return first
-  const second = await attempt()
-  return second ?? ''
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const text = await chat(systemPrompt, history, userMessage, maxTokens)
+      if (!looksLikeSuspiciousResponse(text)) return text
+      console.warn('[ai-client] suspicious response on attempt', attempt + 1, ':', text.slice(0, 50))
+    } catch { /* fallthrough */ }
+    if (attempt === 0) await new Promise(r => setTimeout(r, 2000))
+  }
+  return ''
 }
 
 export async function reactToImage(

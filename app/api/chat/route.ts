@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { after } from 'next/server'
-import { chatWithRetry, decideImageIndex } from '@/lib/ai-client'
+import { chatWithRetry, decideImageIndex, withTimeout } from '@/lib/ai-client'
 import { adminDb } from '@/lib/firebase-admin'
 import { Timestamp } from 'firebase-admin/firestore'
 import { buildSystemPrompt } from '@/lib/chat/buildSystemPrompt'
@@ -9,8 +9,10 @@ import { validatePersonaCard } from '@/lib/persona/card'
 
 export const maxDuration = 60
 
-const FAST_TIMEOUT_MS = 12000
+// 20秒以内に AI 応答が得られなければつなぎ文に切り替える
+const FAST_TIMEOUT_MS = 20000
 const SLOW_TIMEOUT_MS = 30000
+
 const PLACEHOLDER_TEXTS = [
   'ちょっと待って〜',
   'えっと……',
@@ -72,17 +74,19 @@ export async function POST(req: NextRequest) {
     const systemPrompt = buildSystemPrompt(card, persona.name)
     const messages = buildMessages(card, recentHistory)
 
-    // 高速パス: 12秒以内に応答が得られるか競争
-    const fastReplyPromise = chatWithRetry(systemPrompt, messages, user_message, 300, FAST_TIMEOUT_MS)
-    const imageDecisionPromise = images.length > 0
-      ? decideImageIndex(user_message, images)
-      : Promise.resolve('none')
-
-    const fastReply = await fastReplyPromise
+    // ① チャット応答を先に取得（FAST_TIMEOUT_MS で上限設定）
+    const fastReply = await withTimeout(
+      chatWithRetry(systemPrompt, messages, user_message, 300),
+      FAST_TIMEOUT_MS,
+    )
 
     if (fastReply) {
-      // 通常フロー: そのまま保存して返却
-      const [imageDecision] = await Promise.all([imageDecisionPromise])
+      // 通常フロー: 応答後に画像判断（直列、APIコールを1回ずつに絞る）
+      let imageDecision = 'none'
+      if (images.length > 0) {
+        imageDecision = await decideImageIndex(user_message, images)
+      }
+
       const bubbleTexts = splitBubbles(fastReply)
       const now = Timestamp.now()
 
@@ -123,7 +127,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ bubbles: savedBubbles, image: savedImage })
     }
 
-    // 低速パス: つなぎの一言をすぐ返し、本処理はバックグラウンドへ
+    // ② 低速パス: つなぎ文を即返し、本応答はバックグラウンドへ
     const placeholderText = randomPlaceholder()
     const placeholderRef = await db.collection('personas').doc(persona_id).collection('messages').add({
       role: 'assistant',
@@ -135,7 +139,10 @@ export async function POST(req: NextRequest) {
 
     after(async () => {
       try {
-        const realReply = await chatWithRetry(systemPrompt, messages, user_message, 300, SLOW_TIMEOUT_MS)
+        const realReply = await withTimeout(
+          chatWithRetry(systemPrompt, messages, user_message, 300),
+          SLOW_TIMEOUT_MS,
+        )
         const finalText = realReply || 'ごめん、ちょっとうまく返せなかった…もう一回送って！'
         const finalBubbles = splitBubbles(finalText)
         for (const text of finalBubbles) {

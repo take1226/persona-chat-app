@@ -178,11 +178,11 @@ export default function PersonaSettingsPage() {
   }
 
   const s = {
-    page: { minHeight: '100dvh', background: '#f2f2f7', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
-    header: { background: '#fff', borderBottom: '1px solid #e5e5ea', padding: 'calc(env(safe-area-inset-top) + 10px) 16px 10px', display: 'flex', alignItems: 'center', gap: 12, position: 'sticky' as const, top: 0, zIndex: 10 },
+    page: { display: 'flex', flexDirection: 'column' as const, height: '100dvh', background: '#f2f2f7', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
+    header: { background: '#fff', borderBottom: '1px solid #e5e5ea', padding: 'calc(env(safe-area-inset-top) + 10px) 16px 10px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 },
     backBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#06C755', lineHeight: 1, padding: '4px 6px 4px 0' },
     headerTitle: { fontSize: 17, fontWeight: '600', margin: 0, flex: 1 },
-    container: { maxWidth: 480, margin: '0 auto', padding: '16px' },
+    container: { flex: 1, overflowY: 'auto' as const, WebkitOverflowScrolling: 'touch' as const, maxWidth: 480, margin: '0 auto', padding: '16px', boxSizing: 'border-box' as const, width: '100%' },
     section: { background: '#fff', borderRadius: 12, padding: '16px', marginBottom: 12 },
     sectionTitle: { fontSize: 13, fontWeight: '600', color: '#8e8e93', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 12 },
     label: { fontSize: 13, color: '#8e8e93', marginBottom: 4, display: 'block' },
