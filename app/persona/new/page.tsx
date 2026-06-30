@@ -8,7 +8,7 @@ export default function NewPersonaPage() {
   const router = useRouter()
   const [step, setStep] = useState<Step>('profile')
   const [personaId, setPersonaId] = useState<string | null>(null)
-  const [profile, setProfile] = useState({ name: '', relationship: '', gender: '', remarks: '' })
+  const [profile, setProfile] = useState({ name: '', nickname: '', relationship: '', gender: '', remarks: '' })
   const [uploading, setUploading] = useState(false)
   const [statusMsg, setStatusMsg] = useState('')
   const [error, setError] = useState('')
@@ -20,7 +20,7 @@ export default function NewPersonaPage() {
       const res = await fetch('/api/persona/init', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile }),
+        body: JSON.stringify({ profile, nickname: profile.nickname }),
       })
       const data = await res.json()
       if (!res.ok) { setError(`❌ ${data.error ?? 'Failed to create persona'}`); return }
@@ -125,6 +125,15 @@ export default function NewPersonaPage() {
                   value={profile.name}
                   onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
                   placeholder="例: 田中太郎"
+                />
+              </div>
+              <div>
+                <label style={s.label}>あだ名（トーク画面に表示）</label>
+                <input
+                  style={s.input}
+                  value={profile.nickname}
+                  onChange={e => setProfile(p => ({ ...p, nickname: e.target.value }))}
+                  placeholder="例: ゆうくん、ボス、推し（省略可）"
                 />
               </div>
               <div>

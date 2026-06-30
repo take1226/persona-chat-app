@@ -36,9 +36,15 @@ export default function MessageBubble({ content, imageUrl, role, timestamp, avat
         {showRead && <span style={{ fontSize: 11, color: '#fff', opacity: 0.9 }}>既読</span>}
         <span style={{ fontSize: 11, color: '#fff', opacity: 0.85 }}>{timeStr}</span>
       </div>
-      <div style={{ background: '#06C755', color: '#fff', borderRadius: '18px 4px 18px 18px', padding: '8px 12px', maxWidth: '72%', fontSize: 15, lineHeight: 1.5, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-        {content}
-      </div>
+      {imageUrl ? (
+        <div style={{ maxWidth: 200, borderRadius: '18px 4px 18px 18px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }}>
+          <img src={imageUrl} alt="画像" style={{ width: '100%', display: 'block' }} />
+        </div>
+      ) : (
+        <div style={{ background: '#06C755', color: '#fff', borderRadius: '18px 4px 18px 18px', padding: '8px 12px', maxWidth: '72%', fontSize: 15, lineHeight: 1.5, wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+          {content}
+        </div>
+      )}
     </div>
   )
 }

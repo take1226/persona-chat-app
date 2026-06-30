@@ -19,6 +19,7 @@ type Message = {
 type Persona = {
   id: string
   name: string
+  nickname?: string
   avatar_url?: string
   auto_message_enabled: boolean
 }
@@ -42,14 +43,15 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null)
   const messageIdsRef = useRef<Set<string>>(new Set())
   const sendingRef = useRef(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!personaId) { router.push('/'); return }
 
     const unsubPersona = onSnapDoc(doc(db, 'personas', personaId), (snap) => {
       if (!snap.exists()) { router.push('/'); return }
-      const d = snap.data() as { name: string; avatar_url?: string; auto_message_enabled: boolean }
-      setPersona({ id: snap.id, name: d.name, avatar_url: d.avatar_url, auto_message_enabled: d.auto_message_enabled })
+      const d = snap.data() as { name: string; nickname?: string; avatar_url?: string; auto_message_enabled: boolean }
+      setPersona({ id: snap.id, name: d.name, nickname: d.nickname, avatar_url: d.avatar_url, auto_message_enabled: d.auto_message_enabled })
     }, () => router.push('/'))
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -126,6 +128,9 @@ export default function ChatPage() {
     setSending(true)
     setTyping(true)
 
+    const controller = new AbortController()
+    const fetchTimer = setTimeout(() => controller.abort(), 30000)
+
     let savedMsgId: string | null = null
     try {
       const ref = await addDoc(
@@ -142,7 +147,9 @@ export default function ChatPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ persona_id: personaId, user_message: text }),
+        signal: controller.signal,
       })
+      clearTimeout(fetchTimer)
       if (!res.ok) throw new Error(`API error: ${res.status}`)
 
       const data = await res.json() as {
@@ -150,14 +157,11 @@ export default function ChatPage() {
         image: { id: string; url: string } | null
       }
 
-      // 既読をユーザーの最後メッセージに付与
       if (savedMsgId) setReadMsgId(savedMsgId)
 
-      // バブルをIDで事前登録（onSnapshot での重複防止）
       const allIds = [...data.bubbles.map(b => b.id), data.image?.id].filter(Boolean) as string[]
       allIds.forEach(id => messageIdsRef.current.add(id))
 
-      // タイピング演出付きで順次表示
       for (const bubble of data.bubbles) {
         await sleep(400 + Math.random() * 500)
         setTyping(false)
@@ -165,7 +169,7 @@ export default function ChatPage() {
           id: bubble.id, role: 'assistant', content: bubble.text,
           message_type: 'text', created_at: new Date().toISOString(),
         }
-        setMessages(prev => [...prev, msg])
+        setMessages(prev => prev.some(m => m.id === bubble.id) ? prev : [...prev, msg])
         if (data.bubbles.indexOf(bubble) < data.bubbles.length - 1) {
           await sleep(200)
           setTyping(true)
@@ -175,12 +179,13 @@ export default function ChatPage() {
       if (data.image) {
         await sleep(400 + Math.random() * 400)
         setTyping(false)
-        setMessages(prev => [...prev, {
+        setMessages(prev => prev.some(m => m.id === data.image!.id) ? prev : [...prev, {
           id: data.image!.id, role: 'assistant', content: null,
           message_type: 'image', image_url: data.image!.url, created_at: new Date().toISOString(),
         }])
       }
     } catch (err) {
+      clearTimeout(fetchTimer)
       console.error('Send failed:', err)
       setTyping(false)
       if (savedMsgId) {
@@ -188,9 +193,66 @@ export default function ChatPage() {
         setMessages(prev => prev.filter(m => m.id !== savedMsgId))
       }
       setInput(text)
-      alert('送信に失敗しました。')
+      const isTimeout = err instanceof Error && err.name === 'AbortError'
+      alert(isTimeout ? '返信に時間がかかっています。しばらくしてから再度お試しください。' : '送信に失敗しました。もう一度お試しください。')
     } finally {
       sendingRef.current = false
+      setSending(false)
+      setTyping(false)
+    }
+  }
+
+  async function handleSendImage(file: File) {
+    if (!personaId || sending) return
+    setSending(true)
+    setTyping(true)
+
+    const caption = input.trim()
+    setInput('')
+
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('persona_id', personaId)
+      if (caption) fd.append('caption', caption)
+
+      const res = await fetch('/api/upload/chat-image', { method: 'POST', body: fd })
+      if (!res.ok) throw new Error(`Upload error: ${res.status}`)
+
+      const data = await res.json() as {
+        userMsgId: string
+        userImageUrl: string
+        replyId: string
+        replyText: string
+      }
+
+      messageIdsRef.current.add(data.userMsgId)
+      messageIdsRef.current.add(data.replyId)
+
+      setMessages(prev => prev.some(m => m.id === data.userMsgId) ? prev : [...prev, {
+        id: data.userMsgId,
+        role: 'user',
+        content: null,
+        message_type: 'image',
+        image_url: data.userImageUrl,
+        created_at: new Date().toISOString(),
+      }])
+      setReadMsgId(data.userMsgId)
+
+      await sleep(600 + Math.random() * 400)
+      setTyping(false)
+      setMessages(prev => prev.some(m => m.id === data.replyId) ? prev : [...prev, {
+        id: data.replyId,
+        role: 'assistant',
+        content: data.replyText,
+        message_type: 'text',
+        created_at: new Date().toISOString(),
+      }])
+    } catch (err) {
+      console.error('Image send failed:', err)
+      setTyping(false)
+      alert('画像の送信に失敗しました。もう一度お試しください。')
+    } finally {
       setSending(false)
       setTyping(false)
     }
@@ -206,7 +268,7 @@ export default function ChatPage() {
 
   const initials = persona.name.charAt(0).toUpperCase()
   const avatarNode = (
-    <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#06c755', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#fff', fontWeight: '600', flexShrink: 0 }}>
+    <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#06C755', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#fff', fontWeight: '600', flexShrink: 0 }}>
       {persona.avatar_url
         ? <img src={persona.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
         : initials}
@@ -216,12 +278,12 @@ export default function ChatPage() {
   const s = {
     container: { display: 'flex', flexDirection: 'column' as const, height: '100dvh', background: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
     header: { background: '#fff', borderBottom: '1px solid #e5e5ea', padding: 'calc(env(safe-area-inset-top) + 10px) 16px 10px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 },
-    backBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 6px 4px 0', color: '#06c755', lineHeight: 1 },
-    avatar: { width: 40, height: 40, borderRadius: '50%', background: '#06c755', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#fff', fontWeight: '600', flexShrink: 0 },
+    backBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 6px 4px 0', color: '#06C755', lineHeight: 1 },
+    avatar: { width: 40, height: 40, borderRadius: '50%', background: '#06C755', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#fff', fontWeight: '600', flexShrink: 0 },
     headerInfo: { flex: 1 },
     headerName: { fontSize: 16, fontWeight: '600', margin: 0, color: '#000' },
     headerStatus: { fontSize: 12, color: '#8e8e93', margin: '2px 0 0' },
-    pushBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 6px', color: '#06c755' },
+    pushBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 6px', color: '#06C755' },
     messageList: { flex: 1, overflowY: 'auto' as const, padding: '12px 16px', display: 'flex', flexDirection: 'column' as const, gap: 6, background: '#8CABD8' },
     inputArea: { background: '#fff', borderTop: '1px solid #e5e5ea', padding: '8px 12px calc(env(safe-area-inset-bottom) + 8px)', display: 'flex', gap: 6, alignItems: 'flex-end', flexShrink: 0 },
     textarea: { flex: 1, border: '1px solid #d5d5d9', borderRadius: 20, padding: '8px 14px', fontSize: 15, resize: 'none' as const, outline: 'none', minHeight: 36, maxHeight: 100, lineHeight: 1.5, fontFamily: 'inherit', background: '#fff' },
@@ -242,7 +304,12 @@ export default function ChatPage() {
         </div>
         <div style={s.headerInfo}>
           <p style={s.headerName}>{persona.name}</p>
-          <p style={s.headerStatus}>{typing ? '入力中...' : 'AIペルソナ'}</p>
+          {typing
+            ? <p style={s.headerStatus}>入力中...</p>
+            : persona.nickname
+              ? <p style={s.headerStatus}>{persona.nickname}</p>
+              : null
+          }
         </div>
         <button style={s.pushBtn} onClick={enablePush} disabled={pushEnabled || pushLoading} title={pushEnabled ? '通知オン' : '通知をオンにする'}>
           {pushEnabled ? '🔔' : '🔕'}
@@ -274,7 +341,26 @@ export default function ChatPage() {
       </div>
 
       <div style={s.inputArea}>
-        <button style={s.addBtn} aria-label="添付">＋</button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={e => {
+            const f = e.target.files?.[0]
+            if (f) handleSendImage(f)
+            e.target.value = ''
+          }}
+          disabled={sending}
+        />
+        <button
+          style={{ ...s.addBtn, opacity: sending ? 0.4 : 1 }}
+          aria-label="写真を送る"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={sending}
+        >
+          ＋
+        </button>
         <button style={s.emojiBtn} aria-label="スタンプ">😊</button>
         <textarea
           style={s.textarea}

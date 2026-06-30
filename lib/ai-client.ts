@@ -9,6 +9,13 @@ function stripStopTokens(text: string): string {
     .trim()
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  return Promise.race([
+    promise,
+    new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), ms)),
+  ])
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
@@ -37,6 +44,49 @@ export async function chat(
     return stripStopTokens(response.text ?? '')
   } catch (err) {
     console.error('[ai-client] chat error:', err)
+    return ''
+  }
+}
+
+export async function chatWithRetry(
+  systemPrompt: string,
+  history: ChatMessage[],
+  userMessage: string,
+  maxTokens = 500,
+  timeoutMs = 20000,
+): Promise<string> {
+  const attempt = () => withTimeout(chat(systemPrompt, history, userMessage, maxTokens), timeoutMs)
+  const first = await attempt()
+  if (first) return first
+  const second = await attempt()
+  return second ?? ''
+}
+
+export async function reactToImage(
+  systemPrompt: string,
+  imageBase64: string,
+  mimeType: string,
+  caption: string,
+): Promise<string> {
+  try {
+    const ai = getAI()
+    const captionLine = caption ? `\n\nキャプション: ${caption}` : ''
+    const response = await ai.models.generateContent({
+      model: VISION_MODEL,
+      contents: [{
+        role: 'user',
+        parts: [
+          { inlineData: { data: imageBase64, mimeType } },
+          {
+            text: `${systemPrompt}\n\n---\n送られてきた写真を見て、自分として自然に反応してください。写真の内容を感じ取り、友人・恋人としての距離感で、感想・驚き・ツッコミ・質問など人間味のある短い反応を1〜2文で返してください。説明的・分析的な物言いは避けてください。${captionLine}`,
+          },
+        ],
+      }],
+      config: { maxOutputTokens: 150 },
+    })
+    return stripStopTokens(response.text ?? '')
+  } catch (err) {
+    console.error('[ai-client] reactToImage error:', err)
     return ''
   }
 }

@@ -32,6 +32,7 @@ export default function PersonaSettingsPage() {
 
   const [form, setForm] = useState({
     name: '',
+    nickname: '',
     relationship: '',
     gender: '',
     remarks: '',
@@ -45,6 +46,7 @@ export default function PersonaSettingsPage() {
       if (!snap.exists()) { router.push('/'); return }
       const d = snap.data() as {
         name: string
+        nickname?: string
         avatar_url?: string
         profile?: { relationship?: string; gender?: string; remarks?: string }
         behavior_preset?: BehaviorPreset
@@ -53,6 +55,7 @@ export default function PersonaSettingsPage() {
       setAvatarPreview(d.avatar_url ?? '')
       setForm({
         name: d.name ?? '',
+        nickname: d.nickname ?? '',
         relationship: d.profile?.relationship ?? '',
         gender: d.profile?.gender ?? '',
         remarks: d.profile?.remarks ?? '',
@@ -86,6 +89,7 @@ export default function PersonaSettingsPage() {
 
       await updateDoc(doc(db, 'personas', personaId), {
         name: form.name,
+        nickname: form.nickname,
         avatar_url: avatarUrl || null,
         profile: { relationship: form.relationship, gender: form.gender, remarks: form.remarks },
         behavior_preset: form.behavior_preset,
@@ -241,6 +245,8 @@ export default function PersonaSettingsPage() {
           <div style={s.sectionTitle}>基本情報</div>
           <label style={s.label}>名前</label>
           <input style={s.input} value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="例: 田中太郎" />
+          <label style={s.label}>あだ名（トーク画面に表示）</label>
+          <input style={s.input} value={form.nickname} onChange={e => setForm(f => ({ ...f, nickname: e.target.value }))} placeholder="例: ゆうくん、ボス、推し（省略可）" />
           <label style={s.label}>関係性</label>
           <input style={s.input} value={form.relationship} onChange={e => setForm(f => ({ ...f, relationship: e.target.value }))} placeholder="例: 友達 / 彼女 / 同僚" />
           <label style={s.label}>性別</label>

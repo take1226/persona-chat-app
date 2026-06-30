@@ -5,7 +5,7 @@ import { emptyCard } from '@/lib/persona/card'
 
 export async function POST(req: NextRequest) {
   try {
-    const { profile } = await req.json()
+    const { profile, nickname } = await req.json()
     if (!profile?.name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }
@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
     const now = Timestamp.now()
     const ref = await adminDb().collection('personas').add({
       name: profile.name,
+      nickname: nickname ?? '',
       profile,
       system_prompt: `あなたは${profile.name}として自然に振る舞ってください。`,
       card: emptyCard(),
