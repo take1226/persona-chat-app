@@ -50,12 +50,16 @@ export async function POST(req: NextRequest) {
     }
 
     const db = adminDb()
-    const [uploadsSnap, personaDoc] = await Promise.all([
+    const [uploadsSnap, personaDoc, turnExamplesSnap] = await Promise.all([
       db.collection('personas').doc(persona_id).collection('uploads')
         .orderBy('created_at', 'desc')
         .limit(10)
         .get(),
       db.collection('personas').doc(persona_id).get(),
+      db.collection('personas').doc(persona_id).collection('turn_examples')
+        .orderBy('created_at', 'asc')
+        .limit(50)
+        .get(),
     ])
 
     if (!personaDoc.exists) {
@@ -64,25 +68,49 @@ export async function POST(req: NextRequest) {
 
     const personaName = (personaDoc.data()?.name as string) ?? '対象者'
 
-    const turns: string[] = []
-    const rawTexts: string[] = []
-    for (const d of uploadsSnap.docs) {
-      const data = d.data() as { turns?: string; raw_text?: string }
-      if (data.turns) turns.push(data.turns)
-      else if (data.raw_text && data.raw_text !== '[OCR未取得]' && data.raw_text !== '[画像のみ]') {
-        rawTexts.push(data.raw_text)
+    // 手入力の turn_examples を優先
+    const manualExamples: TurnExample[] = turnExamplesSnap.docs
+      .map(d => d.data() as { user: string; persona: string })
+      .filter(d => typeof d.user === 'string' && typeof d.persona === 'string')
+
+    let inputText: string
+    let turnExamples: TurnExample[]
+
+    if (manualExamples.length > 0) {
+      // 手入力ペアを構造化テキストとして分析プロンプトに渡す
+      const pairText = manualExamples
+        .map(e => `相手: ${e.user}\n${personaName}: ${e.persona}`)
+        .join('\n---\n')
+      inputText = `【手入力した会話例（相手の発言→${personaName}さんの返答）】\n${pairText}`
+      // 手入力ペアは既に正確な構造なので AI 抽出不要
+      turnExamples = manualExamples
+    } else {
+      // フォールバック: アップロード済みテキスト/OCR結果
+      const turns: string[] = []
+      const rawTexts: string[] = []
+      for (const d of uploadsSnap.docs) {
+        const data = d.data() as { turns?: string; raw_text?: string }
+        if (data.turns) turns.push(data.turns)
+        else if (data.raw_text && data.raw_text !== '[OCR未取得]' && data.raw_text !== '[画像のみ]') {
+          rawTexts.push(data.raw_text)
+        }
       }
-    }
 
-    const inputText = turns.length > 0
-      ? `【会話ターンペア（相手発話→本人返答）】\n${turns.join('\n---\n')}`
-      : rawTexts.join('\n---\n')
+      inputText = turns.length > 0
+        ? `【会話ターンペア（相手発話→本人返答）】\n${turns.join('\n---\n')}`
+        : rawTexts.join('\n---\n')
 
-    if (!inputText.trim()) {
-      return NextResponse.json(
-        { error: 'No valid text', message: 'スクショ/テキストがまだアップロードされていません' },
-        { status: 400 }
-      )
+      if (!inputText.trim()) {
+        return NextResponse.json(
+          { error: 'No valid text', message: '会話例の手入力、またはスクショ/テキストのアップロードが必要です' },
+          { status: 400 }
+        )
+      }
+
+      // turns があれば AI で高品質ペアを抽出
+      turnExamples = turns.length > 0
+        ? await extractTurnExamples(turns.join('\n---\n'), personaName)
+        : []
     }
 
     const prompt = `以下は「${personaName}」さんのトーク履歴データです。
@@ -152,14 +180,9 @@ ${inputText.substring(0, 6000)}
       card = validatePersonaCard(null)
     }
 
-    // turn_examples: ターンペアがあれば高品質な few-shot ペアを別途抽出
-    let turnExamples: TurnExample[] = []
-    if (turns.length > 0) {
-      turnExamples = await extractTurnExamples(turns.join('\n---\n'), personaName)
-      // card.examples も更新して buildMessages でも使えるように
-      if (turnExamples.length > 0) {
-        card = { ...card, examples: turnExamples }
-      }
+    // 手入力ペアがあれば card.examples に直接反映（AI 生成の examples より優先）
+    if (turnExamples.length > 0) {
+      card = { ...card, examples: turnExamples }
     }
 
     await db.collection('personas').doc(persona_id).update({

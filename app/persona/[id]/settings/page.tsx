@@ -291,6 +291,12 @@ export default function PersonaSettingsPage() {
           <p style={{ fontSize: 13, color: '#8e8e93', margin: '0 0 8px', lineHeight: 1.6 }}>
             LINEや Instagram のスクショを追加すると、よりリアルな返答ができるようになります。
           </p>
+          <button
+            style={{ width: '100%', padding: '10px', background: '#f2f2f7', color: '#333', border: '1px solid #e5e5ea', borderRadius: 8, fontSize: 14, cursor: 'pointer', marginBottom: 10, textAlign: 'left' as const }}
+            onClick={() => personaId && router.push(`/persona/${personaId}/examples`)}
+          >
+            ✍️ 会話例をテキストで追加（推奨）
+          </button>
           {importStatus && (
             <div style={{ ...s.msg, background: '#f0f9f0', color: '#2e7d32', marginBottom: 8 }}>{importStatus}</div>
           )}

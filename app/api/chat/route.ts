@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     const { persona_id, user_message } = await req.json()
     const db = adminDb()
 
-    const [personaDoc, messagesSnap, imagesSnap] = await Promise.all([
+    const [personaDoc, messagesSnap, imagesSnap, turnExamplesSnap] = await Promise.all([
       db.collection('personas').doc(persona_id).get(),
       db.collection('personas').doc(persona_id)
         .collection('messages')
@@ -45,6 +45,11 @@ export async function POST(req: NextRequest) {
         .orderBy('send_count', 'asc')
         .limit(10)
         .get(),
+      db.collection('personas').doc(persona_id)
+        .collection('turn_examples')
+        .orderBy('created_at', 'asc')
+        .limit(20)
+        .get(),
     ])
 
     if (!personaDoc.exists) {
@@ -53,7 +58,14 @@ export async function POST(req: NextRequest) {
 
     const persona = personaDoc.data()!
     const card = validatePersonaCard(persona.card ?? persona.raw_analysis)
-    const turnExamples = (persona.turn_examples ?? []) as TurnExample[]
+
+    // サブコレクションの手入力ペアを優先し、なければドキュメントフィールドにフォールバック
+    const manualExamples = turnExamplesSnap.docs
+      .map(d => d.data() as { user: string; persona: string })
+      .filter(d => typeof d.user === 'string' && typeof d.persona === 'string')
+    const turnExamples: TurnExample[] = manualExamples.length > 0
+      ? manualExamples
+      : (persona.turn_examples ?? []) as TurnExample[]
 
     // 定型文・つなぎ文をフィルタしてから AI コンテキストに渡す
     const recentHistory = messagesSnap.docs.reverse()
