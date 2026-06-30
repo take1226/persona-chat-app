@@ -91,8 +91,8 @@ export default function NewPersonaPage() {
     textarea: { padding: '12px 14px', border: '1px solid #d5d5d9', borderRadius: 10, fontSize: 16, boxSizing: 'border-box' as const, fontFamily: 'inherit', width: '100%', background: '#fff', minHeight: 80, resize: 'vertical' as const },
     radioGroup: { display: 'flex', gap: 20 },
     radioLabel: { display: 'flex', alignItems: 'center', gap: 6, fontSize: 15, cursor: 'pointer' },
-    btn: { padding: '12px', background: '#00b900', color: '#fff', border: 'none', borderRadius: 10, fontSize: 16, fontWeight: '600', cursor: 'pointer', width: '100%' },
-    btnGhost: { padding: '12px', background: '#fff', color: '#00b900', border: '1px solid #00b900', borderRadius: 10, fontSize: 16, fontWeight: '600', cursor: 'pointer', width: '100%' },
+    btn: { padding: '12px', background: '#06C755', color: '#fff', border: 'none', borderRadius: 10, fontSize: 16, fontWeight: '600', cursor: 'pointer', width: '100%' },
+    btnGhost: { padding: '12px', background: '#fff', color: '#06C755', border: '1px solid #06C755', borderRadius: 10, fontSize: 16, fontWeight: '600', cursor: 'pointer', width: '100%' },
     uploadZone: { background: '#fff', border: '2px dashed #d5d5d9', borderRadius: 12, padding: '40px 20px', textAlign: 'center' as const, cursor: 'pointer', display: 'block' },
     msg: { fontSize: 13, color: '#2e7d32', padding: '8px 12px', background: '#f0f9f0', borderRadius: 8, marginBottom: 12, lineHeight: 1.6 },
     errMsg: { fontSize: 13, color: '#d32f2f', padding: '8px 12px', background: '#ffebee', borderRadius: 8, marginBottom: 12, lineHeight: 1.6 },
@@ -101,13 +101,13 @@ export default function NewPersonaPage() {
   return (
     <div style={s.page}>
       <div style={{ background: '#fff', borderBottom: '1px solid #e5e5ea', padding: 'calc(env(safe-area-inset-top) + 10px) 16px 10px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#00b900', lineHeight: 1, padding: '4px 6px 4px 0' }} onClick={() => router.back()}>‹</button>
+        <button style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#06C755', lineHeight: 1, padding: '4px 6px 4px 0' }} onClick={() => router.back()}>‹</button>
         <span style={{ fontSize: 17, fontWeight: '600' }}>ペルソナを追加</span>
       </div>
       <div style={s.container}>
         <div style={s.stepBar}>
           {[0, 1].map(i => (
-            <div key={i} style={{ ...s.stepLine, background: i <= stepIndex ? '#00b900' : '#e5e5ea' }} />
+            <div key={i} style={{ ...s.stepLine, background: i <= stepIndex ? '#06C755' : '#e5e5ea' }} />
           ))}
         </div>
 

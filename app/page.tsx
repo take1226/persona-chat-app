@@ -68,12 +68,12 @@ export default function HomePage() {
   const s = {
     page: { display: 'flex', flexDirection: 'column' as const, height: '100dvh', background: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
     header: { background: '#fff', padding: 'calc(env(safe-area-inset-top) + 12px) 16px 12px', borderBottom: '1px solid #e5e5ea', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 },
-    title: { fontSize: 32, fontWeight: '700', margin: 0, color: '#000' },
+    title: { fontSize: 20, fontWeight: '600', margin: 0, color: '#000' },
     headerActions: { display: 'flex', gap: 4 },
-    iconBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 8px', color: '#06c755' },
+    iconBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 8px', color: '#333' },
     list: { flex: 1, overflowY: 'auto' as const },
-    item: { display: 'flex', alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid #e5e5ea', cursor: 'pointer', background: '#fff', transition: 'background-color 0.15s' },
-    avatar: { width: 54, height: 54, borderRadius: '50%', background: '#06c755', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: '#fff', fontWeight: '600', flexShrink: 0, marginRight: 12, overflow: 'hidden' },
+    item: { display: 'flex', alignItems: 'center', padding: '11px 16px', cursor: 'pointer', background: '#fff', transition: 'background-color 0.15s' },
+    avatar: { width: 52, height: 52, borderRadius: '50%', background: '#06C755', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: '#fff', fontWeight: '600', flexShrink: 0, marginRight: 12, overflow: 'hidden' },
     content: { flex: 1, minWidth: 0 },
     name: { fontSize: 16, fontWeight: '500', margin: '0 0 3px 0', color: '#000' },
     preview: { fontSize: 13, color: '#8e8e93', margin: 0, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' },
@@ -95,7 +95,7 @@ export default function HomePage() {
   return (
     <div style={s.page} onClick={() => menuOpen && setMenuOpen(null)}>
       <div style={s.header}>
-        <h1 style={s.title}>チャット</h1>
+        <h1 style={s.title}>トーク</h1>
         <div style={s.headerActions}>
           <button style={s.iconBtn} title="検索" onClick={() => alert('検索機能は近日対応予定です')}>🔍</button>
           <button style={s.iconBtn} onClick={() => router.push('/persona/new')} title="新規追加">✎</button>
@@ -106,7 +106,7 @@ export default function HomePage() {
         <div style={s.empty}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>💬</div>
           <div style={{ fontSize: 14, marginBottom: 16 }}>トークがまだありません</div>
-          <button onClick={() => router.push('/persona/new')} style={{ background: '#00b900', color: '#fff', border: 'none', borderRadius: 20, padding: '10px 28px', fontSize: 15, fontWeight: '600', cursor: 'pointer' }}>
+          <button onClick={() => router.push('/persona/new')} style={{ background: '#06C755', color: '#fff', border: 'none', borderRadius: 20, padding: '10px 28px', fontSize: 15, fontWeight: '600', cursor: 'pointer' }}>
             + ペルソナを追加
           </button>
         </div>
@@ -139,6 +139,7 @@ export default function HomePage() {
                 </button>
               </div>
 
+              <div style={{ height: 1, background: '#E5E5EA', marginLeft: 80 }} />
               {menuOpen === p.id && (
                 <div style={s.menuPanel} onClick={e => e.stopPropagation()}>
                   <button style={{ ...s.menuActionBtn, background: '#f2f2f7', color: '#000' }}

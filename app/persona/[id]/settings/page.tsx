@@ -176,7 +176,7 @@ export default function PersonaSettingsPage() {
   const s = {
     page: { minHeight: '100dvh', background: '#f2f2f7', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
     header: { background: '#fff', borderBottom: '1px solid #e5e5ea', padding: 'calc(env(safe-area-inset-top) + 10px) 16px 10px', display: 'flex', alignItems: 'center', gap: 12, position: 'sticky' as const, top: 0, zIndex: 10 },
-    backBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#00b900', lineHeight: 1, padding: '4px 6px 4px 0' },
+    backBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#06C755', lineHeight: 1, padding: '4px 6px 4px 0' },
     headerTitle: { fontSize: 17, fontWeight: '600', margin: 0, flex: 1 },
     container: { maxWidth: 480, margin: '0 auto', padding: '16px' },
     section: { background: '#fff', borderRadius: 12, padding: '16px', marginBottom: 12 },
@@ -186,10 +186,10 @@ export default function PersonaSettingsPage() {
     select: { width: '100%', padding: '10px 12px', border: '1px solid #e5e5ea', borderRadius: 8, fontSize: 15, boxSizing: 'border-box' as const, fontFamily: 'inherit', background: '#fff', marginBottom: 10, appearance: 'auto' as const },
     textarea: { width: '100%', padding: '10px 12px', border: '1px solid #e5e5ea', borderRadius: 8, fontSize: 15, boxSizing: 'border-box' as const, fontFamily: 'inherit', background: '#fff', marginBottom: 10, minHeight: 80, resize: 'vertical' as const },
     avatarArea: { display: 'flex', alignItems: 'center', gap: 16 },
-    avatarCircle: { width: 72, height: 72, borderRadius: '50%', background: '#00b900', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, color: '#fff', fontWeight: '600', flexShrink: 0, overflow: 'hidden' },
+    avatarCircle: { width: 72, height: 72, borderRadius: '50%', background: '#06C755', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, color: '#fff', fontWeight: '600', flexShrink: 0, overflow: 'hidden' },
     avatarChangeBtn: { background: '#f2f2f7', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 14, cursor: 'pointer', color: '#000' },
     uploadZone: { background: '#f2f2f7', border: '2px dashed #d5d5d9', borderRadius: 12, padding: '24px 20px', textAlign: 'center' as const, cursor: 'pointer', display: 'block', marginTop: 4 },
-    saveBtn: { width: '100%', padding: '14px', background: '#00b900', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: '700', cursor: 'pointer', marginBottom: 10 },
+    saveBtn: { width: '100%', padding: '14px', background: '#06C755', color: '#fff', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: '700', cursor: 'pointer', marginBottom: 10 },
     deleteBtn: { width: '100%', padding: '14px', background: '#ffebee', color: '#d32f2f', border: 'none', borderRadius: 12, fontSize: 16, fontWeight: '600', cursor: 'pointer' },
     msg: { fontSize: 13, padding: '8px 12px', borderRadius: 8, marginBottom: 12, lineHeight: 1.6 },
   }

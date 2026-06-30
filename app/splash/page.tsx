@@ -17,7 +17,7 @@ export default function SplashPage() {
       alignItems: 'center',
       justifyContent: 'center',
       height: '100dvh',
-      background: '#00b900',
+      background: '#06C755',
       fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
     }}>
       <div style={{ fontSize: 72, marginBottom: 20 }}>💬</div>

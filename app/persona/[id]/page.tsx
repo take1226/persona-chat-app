@@ -222,10 +222,12 @@ export default function ChatPage() {
     headerName: { fontSize: 16, fontWeight: '600', margin: 0, color: '#000' },
     headerStatus: { fontSize: 12, color: '#8e8e93', margin: '2px 0 0' },
     pushBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 6px', color: '#06c755' },
-    messageList: { flex: 1, overflowY: 'auto' as const, padding: '12px 16px', display: 'flex', flexDirection: 'column' as const, gap: 6 },
-    inputArea: { background: '#fff', borderTop: '1px solid #e5e5ea', padding: '8px 16px calc(env(safe-area-inset-bottom) + 16px)', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 },
+    messageList: { flex: 1, overflowY: 'auto' as const, padding: '12px 16px', display: 'flex', flexDirection: 'column' as const, gap: 6, background: '#8CABD8' },
+    inputArea: { background: '#fff', borderTop: '1px solid #e5e5ea', padding: '8px 12px calc(env(safe-area-inset-bottom) + 8px)', display: 'flex', gap: 6, alignItems: 'flex-end', flexShrink: 0 },
     textarea: { flex: 1, border: '1px solid #d5d5d9', borderRadius: 20, padding: '8px 14px', fontSize: 15, resize: 'none' as const, outline: 'none', minHeight: 36, maxHeight: 100, lineHeight: 1.5, fontFamily: 'inherit', background: '#fff' },
-    sendBtn: { width: 36, height: 36, borderRadius: '50%', background: '#06c755', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '600' },
+    addBtn: { width: 34, height: 34, borderRadius: '50%', background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#8e8e93', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 },
+    emojiBtn: { width: 34, height: 34, borderRadius: '50%', background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#8e8e93', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 },
+    sendBtn: { width: 34, height: 34, borderRadius: '50%', background: '#06C755', border: 'none', color: '#fff', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '600' },
     settingsBtn: { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 6px', color: '#8e8e93', lineHeight: 1 },
   }
 
@@ -272,6 +274,8 @@ export default function ChatPage() {
       </div>
 
       <div style={s.inputArea}>
+        <button style={s.addBtn} aria-label="添付">＋</button>
+        <button style={s.emojiBtn} aria-label="スタンプ">😊</button>
         <textarea
           style={s.textarea}
           value={input}
@@ -281,9 +285,11 @@ export default function ChatPage() {
           rows={1}
           disabled={sending}
         />
-        <button style={{ ...s.sendBtn, opacity: sending || !input.trim() ? 0.5 : 1 }} onClick={handleSend} disabled={sending || !input.trim()}>
-          送信
-        </button>
+        {input.trim() && (
+          <button style={{ ...s.sendBtn, opacity: sending ? 0.5 : 1 }} onClick={handleSend} disabled={sending}>
+            ➤
+          </button>
+        )}
       </div>
     </div>
   )
