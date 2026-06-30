@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { after } from 'next/server'
-import { chatWithRetry, decideImageIndex, withTimeout } from '@/lib/ai-client'
+import { chatWithRetry, decideImageIndex, withTimeout, isPlaceholderReply, PLACEHOLDER_CONTENTS } from '@/lib/ai-client'
 import { adminDb } from '@/lib/firebase-admin'
 import { Timestamp } from 'firebase-admin/firestore'
 import { buildSystemPrompt } from '@/lib/chat/buildSystemPrompt'
@@ -9,20 +9,14 @@ import { validatePersonaCard } from '@/lib/persona/card'
 
 export const maxDuration = 60
 
-// 20秒以内に AI 応答が得られなければつなぎ文に切り替える
 const FAST_TIMEOUT_MS = 20000
 const SLOW_TIMEOUT_MS = 30000
 
-const PLACEHOLDER_TEXTS = [
-  'ちょっと待って〜',
-  'えっと……',
-  'あー、うん、ちょっとだけ待ってて',
-  'もうちょい待ってほしい！',
-  'うん！今返すね',
-]
+// 2段階応答のつなぎ文（is_placeholder: true を付けて保存する）
+const BRIDGE_TEXTS = PLACEHOLDER_CONTENTS.slice(0, 5)
 
-function randomPlaceholder(): string {
-  return PLACEHOLDER_TEXTS[Math.floor(Math.random() * PLACEHOLDER_TEXTS.length)]
+function randomBridge(): string {
+  return BRIDGE_TEXTS[Math.floor(Math.random() * BRIDGE_TEXTS.length)]
 }
 
 function splitBubbles(text: string): string[] {
@@ -31,6 +25,8 @@ function splitBubbles(text: string): string[] {
   const sentences = text.split(/(?<=[。！？\n])/).map(s => s.trim()).filter(Boolean)
   return sentences.length > 1 ? sentences.slice(0, 4) : [text.trim()]
 }
+
+type TurnExample = { user: string; persona: string }
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,14 +53,23 @@ export async function POST(req: NextRequest) {
 
     const persona = personaDoc.data()!
     const card = validatePersonaCard(persona.card ?? persona.raw_analysis)
+    const turnExamples = (persona.turn_examples ?? []) as TurnExample[]
 
-    const recentHistory = messagesSnap.docs.reverse().map(d => {
-      const m = d.data() as { role: string; content?: string }
-      return {
+    // 定型文・つなぎ文をフィルタしてから AI コンテキストに渡す
+    const recentHistory = messagesSnap.docs.reverse()
+      .map(d => {
+        const m = d.data() as { role: string; content?: string; is_placeholder?: boolean }
+        return {
+          role: m.role,
+          content: m.content ?? '',
+          is_placeholder: m.is_placeholder ?? false,
+        }
+      })
+      .filter(m => !m.is_placeholder && !isPlaceholderReply(m.content))
+      .map(m => ({
         role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
-        content: m.content ?? '[画像を送信]',
-      }
-    })
+        content: m.content || '[画像を送信]',
+      }))
 
     const images = imagesSnap.docs.map(d => ({
       id: d.id,
@@ -72,22 +77,28 @@ export async function POST(req: NextRequest) {
     }))
 
     const systemPrompt = buildSystemPrompt(card, persona.name)
-    const messages = buildMessages(card, recentHistory)
+    // turn_examples があれば card.examples の代わりに few-shot として使う
+    const messages = buildMessages(card, recentHistory, turnExamples.length > 0 ? turnExamples : undefined)
 
-    // ① チャット応答を先に取得（FAST_TIMEOUT_MS で上限設定）
+    // ① 高速パス: 20秒以内に応答が得られるか試みる
     const fastReply = await withTimeout(
       chatWithRetry(systemPrompt, messages, user_message, 300),
       FAST_TIMEOUT_MS,
     )
 
     if (fastReply) {
-      // 通常フロー: 応答後に画像判断（直列、APIコールを1回ずつに絞る）
+      // 念のため再チェック（2回リトライ後もまだ怪しければフォールバック）
+      const finalReply = isPlaceholderReply(fastReply)
+        ? `…（${persona.name}はしばらく考えています）`
+        : fastReply
+
+      // 応答後に画像判断（直列、API コールを1本ずつに絞る）
       let imageDecision = 'none'
       if (images.length > 0) {
         imageDecision = await decideImageIndex(user_message, images)
       }
 
-      const bubbleTexts = splitBubbles(fastReply)
+      const bubbleTexts = splitBubbles(finalReply)
       const now = Timestamp.now()
 
       const savedBubbles: Array<{ id: string; text: string }> = []
@@ -97,6 +108,7 @@ export async function POST(req: NextRequest) {
           content: text,
           message_type: 'text',
           is_auto_message: false,
+          is_placeholder: false,
           created_at: Timestamp.now(),
         })
         savedBubbles.push({ id: ref.id, text })
@@ -114,6 +126,7 @@ export async function POST(req: NextRequest) {
           image_url: imageToSend.public_url,
           message_type: 'image',
           is_auto_message: false,
+          is_placeholder: false,
           created_at: Timestamp.now(),
         })
         savedImage = { id: ref.id, url: imageToSend.public_url }
@@ -127,13 +140,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ bubbles: savedBubbles, image: savedImage })
     }
 
-    // ② 低速パス: つなぎ文を即返し、本応答はバックグラウンドへ
-    const placeholderText = randomPlaceholder()
-    const placeholderRef = await db.collection('personas').doc(persona_id).collection('messages').add({
+    // ② 低速パス: つなぎ文を is_placeholder: true で即保存し、本応答はバックグラウンドへ
+    const bridgeText = randomBridge()
+    const bridgeRef = await db.collection('personas').doc(persona_id).collection('messages').add({
       role: 'assistant',
-      content: placeholderText,
+      content: bridgeText,
       message_type: 'text',
       is_auto_message: false,
+      is_placeholder: true,
       created_at: Timestamp.now(),
     })
 
@@ -143,7 +157,9 @@ export async function POST(req: NextRequest) {
           chatWithRetry(systemPrompt, messages, user_message, 300),
           SLOW_TIMEOUT_MS,
         )
-        const finalText = realReply || 'ごめん、ちょっとうまく返せなかった…もう一回送って！'
+        const finalText = (realReply && !isPlaceholderReply(realReply))
+          ? realReply
+          : `${persona.name}からの返信が届きませんでした。もう一度メッセージを送ってみてください。`
         const finalBubbles = splitBubbles(finalText)
         for (const text of finalBubbles) {
           await db.collection('personas').doc(persona_id).collection('messages').add({
@@ -151,15 +167,17 @@ export async function POST(req: NextRequest) {
             content: text,
             message_type: 'text',
             is_auto_message: false,
+            is_placeholder: false,
             created_at: Timestamp.now(),
           })
         }
       } catch {
         await db.collection('personas').doc(persona_id).collection('messages').add({
           role: 'assistant',
-          content: 'ごめん、ちょっとうまく返せなかった…もう一回送って！',
+          content: `${persona.name}からの返信が届きませんでした。もう一度メッセージを送ってみてください。`,
           message_type: 'text',
           is_auto_message: false,
+          is_placeholder: false,
           created_at: Timestamp.now(),
         }).catch(() => {})
       }
@@ -167,7 +185,7 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({
-      bubbles: [{ id: placeholderRef.id, text: placeholderText }],
+      bubbles: [{ id: bridgeRef.id, text: bridgeText }],
       image: null,
     })
   } catch (err) {

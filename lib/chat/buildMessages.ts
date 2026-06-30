@@ -10,9 +10,11 @@ interface ChatMessage {
 export function buildMessages(
   card: PersonaCard,
   recentHistory: ChatMessage[],
+  turnExamples?: Array<{ user: string; persona: string }>,
 ): ChatMessage[] {
-  // few-shot: card.examples を実際の会話ターンとして差し込む
-  const fewShot: ChatMessage[] = card.examples.slice(0, 10).flatMap(ex => [
+  // turnExamples が渡されていればそちらを優先（analyze-personality で抽出した高品質ペア）
+  const exampleSource = (turnExamples && turnExamples.length > 0) ? turnExamples : card.examples
+  const fewShot: ChatMessage[] = exampleSource.slice(0, 12).flatMap(ex => [
     { role: 'user' as const, content: ex.user },
     { role: 'assistant' as const, content: ex.persona },
   ])

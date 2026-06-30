@@ -4,6 +4,44 @@ import { adminDb } from '@/lib/firebase-admin'
 import { Timestamp } from 'firebase-admin/firestore'
 import { validatePersonaCard, type PersonaCard } from '@/lib/persona/card'
 
+type TurnExample = { user: string; persona: string }
+
+async function extractTurnExamples(
+  turnsText: string,
+  personaName: string,
+): Promise<TurnExample[]> {
+  const prompt = `以下は「${personaName}」さんのトーク履歴から抽出した会話ターンペアです。
+${personaName}さんの言葉遣い・口調・テンポが最もリアルに表れている 8〜12 組を選んで抽出してください。
+
+条件:
+- 実際に${personaName}さんが使っている語彙・語尾・絵文字をそのまま保持する
+- 短文・長文・複数連投など多様な返答スタイルを含める
+- システム的なメッセージ・一般的な挨拶だけのペアは除外する
+
+【入力データ】
+${turnsText.substring(0, 4000)}
+
+【出力形式】JSON配列のみ（前置き・コードフェンス禁止）:
+[{"user": "相手の発言", "persona": "${personaName}さんの返答"}]`
+
+  try {
+    const raw = await generate(prompt, 2000)
+    const cleaned = raw.replace(/```json|```/g, '').trim()
+    const match = cleaned.match(/\[[\s\S]*\]/)
+    if (!match) return []
+    const parsed = JSON.parse(match[0]) as unknown[]
+    return parsed
+      .filter((p): p is TurnExample =>
+        typeof p === 'object' && p !== null &&
+        typeof (p as TurnExample).user === 'string' &&
+        typeof (p as TurnExample).persona === 'string'
+      )
+      .slice(0, 12)
+  } catch {
+    return []
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { persona_id } = await req.json()
@@ -26,7 +64,6 @@ export async function POST(req: NextRequest) {
 
     const personaName = (personaDoc.data()?.name as string) ?? '対象者'
 
-    // ターンペアを優先、なければ raw_text を使用
     const turns: string[] = []
     const rawTexts: string[] = []
     for (const d of uploadsSnap.docs) {
@@ -79,7 +116,7 @@ ${inputText.substring(0, 6000)}
   },
   "behavior": {
     "reply_tempo": "fast|normal|slow",
-    "burst": true（連投する）またはfalse,
+    "burst": true,
     "question_freq": "low|medium|high",
     "backchannel": ["あいづち表現（うん/そうだね/なるほど 等）"]
   },
@@ -94,13 +131,13 @@ ${inputText.substring(0, 6000)}
   },
   "examples": [
     {"user": "相手の発話", "persona": "${personaName}さんの返答"},
-    ...（本人らしさが強い実際の会話から10〜20件）
+    {"user": "...", "persona": "..."}
   ],
   "meta": {
     "source": "LINE|Instagram|その他",
     "period": "会話の期間（例: 2024年）",
-    "message_count": メッセージ総数（数値）,
-    "confidence": 0.0〜1.0
+    "message_count": 0,
+    "confidence": 0.8
   }
 }`
 
@@ -115,13 +152,24 @@ ${inputText.substring(0, 6000)}
       card = validatePersonaCard(null)
     }
 
+    // turn_examples: ターンペアがあれば高品質な few-shot ペアを別途抽出
+    let turnExamples: TurnExample[] = []
+    if (turns.length > 0) {
+      turnExamples = await extractTurnExamples(turns.join('\n---\n'), personaName)
+      // card.examples も更新して buildMessages でも使えるように
+      if (turnExamples.length > 0) {
+        card = { ...card, examples: turnExamples }
+      }
+    }
+
     await db.collection('personas').doc(persona_id).update({
       card,
       raw_analysis: card,
+      turn_examples: turnExamples,
       updated_at: Timestamp.now(),
     })
 
-    return NextResponse.json({ success: true, card })
+    return NextResponse.json({ success: true, card, turn_examples_count: turnExamples.length })
   } catch (err: unknown) {
     const error = err as { message?: string }
     console.error('[analyze-personality] error:', error)

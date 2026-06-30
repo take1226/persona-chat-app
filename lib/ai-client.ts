@@ -9,7 +9,6 @@ function stripStopTokens(text: string): string {
     .trim()
 }
 
-// タイムアウト付き Promise ラッパー（外部でも使用可能）
 export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
   return Promise.race([
     promise,
@@ -17,13 +16,25 @@ export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | und
   ])
 }
 
-// AI が返したテキストが「エラー・待機の定型文」かどうかを判定
-function looksLikeSuspiciousResponse(text: string): boolean {
+// Firestore に保存されたつなぎ文・エラー定型文の全候補（クリーンアップ時にも使用）
+export const PLACEHOLDER_CONTENTS = [
+  'ちょっと待って〜',
+  'えっと……',
+  'あー、うん、ちょっとだけ待ってて',
+  'もうちょい待ってほしい！',
+  'うん！今返すね',
+  'ごめん、ちょっとうまく返せなかった…もう一回送って！',
+]
+
+// AI の返答が「エラー・待機の定型文」らしいかどうかを判定
+export function isPlaceholderReply(text: string): boolean {
   if (!text || text.trim().length < 2) return true
+  if (PLACEHOLDER_CONTENTS.includes(text.trim())) return true
   const patterns = [
     /ちょっと待って/, /少々お待ち/, /しばらくお待ち/, /please wait/i,
     /rate.?limit/i, /too many requests/i, /try again/i, /一時的に/, /混雑/,
     /申し訳ありません.*しばらく/, /サービスが/, /エラーが発生/,
+    /もう一回送って/,
   ]
   return patterns.some(p => p.test(text))
 }
@@ -60,7 +71,7 @@ export async function chat(
   }
 }
 
-// 怪しいレスポンスを弾いて最大2回リトライする
+// 怪しいレスポンスを弾いて最大2回リトライ（2秒インターバル）
 export async function chatWithRetry(
   systemPrompt: string,
   history: ChatMessage[],
@@ -70,8 +81,8 @@ export async function chatWithRetry(
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const text = await chat(systemPrompt, history, userMessage, maxTokens)
-      if (!looksLikeSuspiciousResponse(text)) return text
-      console.warn('[ai-client] suspicious response on attempt', attempt + 1, ':', text.slice(0, 50))
+      if (!isPlaceholderReply(text)) return text
+      console.warn('[ai-client] suspicious response attempt', attempt + 1, ':', text.slice(0, 60))
     } catch { /* fallthrough */ }
     if (attempt === 0) await new Promise(r => setTimeout(r, 2000))
   }
