@@ -87,18 +87,13 @@ export async function POST(req: NextRequest) {
     )
 
     if (fastReply) {
-      // 念のため再チェック（2回リトライ後もまだ怪しければフォールバック）
-      const finalReply = isPlaceholderReply(fastReply)
-        ? `…（${persona.name}はしばらく考えています）`
-        : fastReply
-
       // 応答後に画像判断（直列、API コールを1本ずつに絞る）
       let imageDecision = 'none'
       if (images.length > 0) {
         imageDecision = await decideImageIndex(user_message, images)
       }
 
-      const bubbleTexts = splitBubbles(finalReply)
+      const bubbleTexts = splitBubbles(fastReply)
       const now = Timestamp.now()
 
       const savedBubbles: Array<{ id: string; text: string }> = []
@@ -157,9 +152,7 @@ export async function POST(req: NextRequest) {
           chatWithRetry(systemPrompt, messages, user_message, 300),
           SLOW_TIMEOUT_MS,
         )
-        const finalText = (realReply && !isPlaceholderReply(realReply))
-          ? realReply
-          : `${persona.name}からの返信が届きませんでした。もう一度メッセージを送ってみてください。`
+        const finalText = realReply || `${persona.name}からの返信が届きませんでした。もう一度メッセージを送ってみてください。`
         const finalBubbles = splitBubbles(finalText)
         for (const text of finalBubbles) {
           await db.collection('personas').doc(persona_id).collection('messages').add({

@@ -27,14 +27,17 @@ export const PLACEHOLDER_CONTENTS = [
 ]
 
 // AI の返答が「エラー・待機の定型文」らしいかどうかを判定
+// ★ 日常会話に頻出する語（ちょっと待って・一時的に・混雑 等）は含めない
 export function isPlaceholderReply(text: string): boolean {
-  if (!text || text.trim().length < 2) return true
+  if (!text || text.trim().length === 0) return true
   if (PLACEHOLDER_CONTENTS.includes(text.trim())) return true
   const patterns = [
-    /ちょっと待って/, /少々お待ち/, /しばらくお待ち/, /please wait/i,
-    /rate.?limit/i, /too many requests/i, /try again/i, /一時的に/, /混雑/,
-    /申し訳ありません.*しばらく/, /サービスが/, /エラーが発生/,
-    /もう一回送って/,
+    /rate.?limit/i,
+    /too many requests/i,
+    /try again later/i,
+    /please wait a/i,
+    /申し訳ありません.*しばらくお待ち/,
+    /エラーが発生しました/,
   ]
   return patterns.some(p => p.test(text))
 }
