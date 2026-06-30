@@ -1,4 +1,5 @@
-const POLLINATIONS_URL = 'https://text.pollinations.ai/openai'
+// SERVER-ONLY — クライアントコードから import しない
+import { getAI, MODEL, VISION_MODEL } from './gemini'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -11,78 +12,56 @@ export async function chat(
   userMessage: string,
   maxTokens = 500,
 ): Promise<string> {
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    ...history,
-    { role: 'user', content: userMessage },
-  ]
-  const res = await fetch(POLLINATIONS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'openai', messages, max_tokens: maxTokens, private: true }),
-  })
-  if (!res.ok) throw new Error(`AI API error: ${res.status}`)
-  const data = await res.json()
-  return data.choices?.[0]?.message?.content ?? ''
-}
-
-export async function decideImageIndex(userMessage: string, images: { category: string; description: string }[]): Promise<string> {
-  const prompt = `今の会話の流れで画像を送るべきか判断してください。
-
-【ユーザーのメッセージ】: ${userMessage}
-
-【利用可能な画像】:
-${images.map((img, i) => `${i}: category=${img.category}, description=${img.description}`).join('\n')}
-
-画像を送るべきであれば番号(0〜${images.length - 1})を、送らなければ "none" を返してください。数字か "none" のみ。`
-
-  const res = await fetch(POLLINATIONS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'openai',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 10,
-      private: true,
-    }),
-  })
-  if (!res.ok) return 'none'
-  const data = await res.json()
-  return (data.choices?.[0]?.message?.content ?? 'none').trim()
+  try {
+    const ai = getAI()
+    const contents = [
+      ...history.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      })),
+      { role: 'user', parts: [{ text: userMessage }] },
+    ]
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents,
+      config: { systemInstruction: systemPrompt, maxOutputTokens: maxTokens },
+    })
+    return response.text ?? ''
+  } catch (err) {
+    console.error('[ai-client] chat error:', err)
+    return ''
+  }
 }
 
 export async function generate(prompt: string, maxTokens = 2000): Promise<string> {
-  const res = await fetch(POLLINATIONS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'openai',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: maxTokens,
-      private: true,
-    }),
-  })
-  if (!res.ok) throw new Error(`AI API error: ${res.status}`)
-  const data = await res.json()
-  return data.choices?.[0]?.message?.content ?? ''
+  try {
+    const ai = getAI()
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: { maxOutputTokens: maxTokens },
+    })
+    return response.text ?? ''
+  } catch (err) {
+    console.error('[ai-client] generate error:', err)
+    return ''
+  }
 }
 
 export async function visionOCR(base64: string, mimeType: string): Promise<string> {
-  const res = await fetch(POLLINATIONS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'openai',
-      messages: [{
+  try {
+    const ai = getAI()
+    const response = await ai.models.generateContent({
+      model: VISION_MODEL,
+      contents: [{
         role: 'user',
-        content: [
-          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+        parts: [
+          { inlineData: { data: base64, mimeType } },
           {
-            type: 'text',
             text: `このスクリーンショットはLINEまたはInstagramのDMのトーク画面です。
 テキストメッセージをすべて抽出してください。
 
-以下の形式のJSONのみ出力してください（前後の説明不要）:
+以下の形式のJSONのみ出力（前後の説明不要）:
 {
   "messages": [
     { "sender": "相手" or "自分", "text": "メッセージ内容", "timestamp": "時刻（あれば）" }
@@ -92,11 +71,31 @@ export async function visionOCR(base64: string, mimeType: string): Promise<strin
           },
         ],
       }],
-      max_tokens: 1000,
-      private: true,
-    }),
-  })
-  if (!res.ok) throw new Error(`Vision API error: ${res.status}`)
-  const data = await res.json()
-  return data.choices?.[0]?.message?.content ?? ''
+    })
+    return response.text ?? ''
+  } catch (err) {
+    console.error('[ai-client] visionOCR error:', err)
+    return ''
+  }
+}
+
+export async function decideImageIndex(
+  userMessage: string,
+  images: { category: string; description: string }[],
+): Promise<string> {
+  const prompt = `今の会話の流れで画像を送るべきか判断してください。
+
+【ユーザーのメッセージ】: ${userMessage}
+
+【利用可能な画像】:
+${images.map((img, i) => `${i}: category=${img.category}, description=${img.description}`).join('\n')}
+
+画像を送るべきであれば番号(0〜${images.length - 1})を、送らなければ "none" を返してください。数字か "none" のみ。`
+
+  try {
+    const result = await generate(prompt, 10)
+    return result.trim() || 'none'
+  } catch {
+    return 'none'
+  }
 }

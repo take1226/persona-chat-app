@@ -51,13 +51,6 @@ export default function NewPersonaPage() {
       }
     } catch { /* ignore */ }
 
-    // バックグラウンドで persona/create を実行（await しない）
-    fetch('/api/persona/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ persona_id: personaId, profile }),
-    }).catch(e => console.warn('create warn:', e))
-
     // 人物特性を多次元分析（失敗しても続行）
     setStatusMsg('🧠 人物特性を分析中...')
     try {
@@ -81,12 +74,6 @@ export default function NewPersonaPage() {
 
   async function skipToChat() {
     if (!personaId) return
-    // バックグラウンドで生成（アップロードなし）
-    fetch('/api/persona/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ persona_id: personaId, profile }),
-    }).catch(() => {})
     router.push(`/persona/${personaId}`)
   }
 

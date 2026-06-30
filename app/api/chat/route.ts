@@ -2,55 +2,28 @@ import { NextRequest, NextResponse } from 'next/server'
 import { chat, decideImageIndex } from '@/lib/ai-client'
 import { adminDb } from '@/lib/firebase-admin'
 import { Timestamp } from 'firebase-admin/firestore'
+import { buildSystemPrompt } from '@/lib/chat/buildSystemPrompt'
+import { buildMessages } from '@/lib/chat/buildMessages'
+import { validatePersonaCard } from '@/lib/persona/card'
 
-interface RawAnalysis {
-  tone?: string
-  commonPhrases?: string[]
-  emotionalTendency?: 'positive' | 'neutral' | 'negative'
-  detailLevel?: 'concise' | 'moderate' | 'detailed'
-  textExamples?: string[]
-  comprehensivePrompt?: string
-}
-
-function buildSystemPrompt(name: string, basePrompt: string, rawAnalysis?: RawAnalysis): string {
-  if (!rawAnalysis || !rawAnalysis.comprehensivePrompt) {
-    return `${basePrompt}\n\n【返答ルール】\n- 1〜3文で返す（50字以内が目安）\n- 説明・解説は不要。会話だけ。\n- 相手のトーンに合わせる`
-  }
-
-  const phrases = rawAnalysis.commonPhrases?.slice(0, 3).join('、') || 'なし'
-  const examples = (rawAnalysis.textExamples ?? []).slice(0, 3).map(ex => `・${ex}`).join('\n')
-  const moodNote = rawAnalysis.emotionalTendency === 'positive' ? 'ポジティブで楽観的'
-    : rawAnalysis.emotionalTendency === 'negative' ? 'やや悲観的'
-    : '中立的'
-
-  return `あなたは${name}として返答します。以下の特性を完全に再現してください。
-
-【${name}の特性】
-- 口調: ${rawAnalysis.tone || 'カジュアル'}
-- 口癖・よく使う表現: ${phrases}
-- 感情傾向: ${moodNote}
-
-【実際の会話例】
-${examples || 'なし'}
-
-【返答ルール】
-- 返答は1〜2文、50字以内が原則
-- ${phrases}などを自然に使う
-- 説明・解説は不要。会話だけ。
-- AIらしい丁寧さは避ける（${moodNote}で人間らしく）`
+function splitBubbles(text: string): string[] {
+  const raw = text.split(/\n\n+/).map(s => s.trim()).filter(Boolean)
+  if (raw.length > 1) return raw.slice(0, 4)
+  // 単一ブロックが長い場合は文末で分割
+  const sentences = text.split(/(?<=[。！？\n])/).map(s => s.trim()).filter(Boolean)
+  return sentences.length > 1 ? sentences.slice(0, 4) : [text.trim()]
 }
 
 export async function POST(req: NextRequest) {
   const { persona_id, user_message } = await req.json()
   const db = adminDb()
 
-  // Parallel: fetch persona, recent history, and available images simultaneously
   const [personaDoc, messagesSnap, imagesSnap] = await Promise.all([
     db.collection('personas').doc(persona_id).get(),
     db.collection('personas').doc(persona_id)
       .collection('messages')
       .orderBy('created_at', 'desc')
-      .limit(20)
+      .limit(40)
       .get(),
     db.collection('personas').doc(persona_id)
       .collection('images')
@@ -64,7 +37,9 @@ export async function POST(req: NextRequest) {
   }
 
   const persona = personaDoc.data()!
-  const history = messagesSnap.docs.reverse().map(d => {
+  const card = validatePersonaCard(persona.card ?? persona.raw_analysis)
+
+  const recentHistory = messagesSnap.docs.reverse().map(d => {
     const m = d.data() as { role: string; content?: string }
     return {
       role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
@@ -77,21 +52,15 @@ export async function POST(req: NextRequest) {
     ...d.data() as { public_url: string; category: string; description: string; tags?: string[]; send_count: number },
   }))
 
-  const basePrompt = persona.behavior_prompt || persona.system_prompt || `あなたは${persona.name}として自然に会話してください。`
-  const systemPrompt = buildSystemPrompt(persona.name, basePrompt, persona.raw_analysis)
+  const systemPrompt = buildSystemPrompt(card, persona.name)
+  const messages = buildMessages(card, recentHistory)
 
-  // Parallel: generate AI text reply and decide on image simultaneously
-  const [rawReplyText, imageDecision] = await Promise.all([
-    chat(systemPrompt, history, user_message, 80),
+  const [rawReply, imageDecision] = await Promise.all([
+    chat(systemPrompt, messages, user_message, 300),
     images.length > 0 ? decideImageIndex(user_message, images) : Promise.resolve('none'),
   ])
 
-  // Trim to 1-2 sentences if too long
-  let replyText = rawReplyText
-  if (replyText.length > 100) {
-    const sentences = replyText.split(/(?<=[。！？\n])/).filter(s => s.trim())
-    replyText = sentences.slice(0, 2).join('').trim()
-  }
+  const bubbleTexts = splitBubbles(rawReply)
 
   const imageToSend = imageDecision !== 'none'
     ? (() => { const idx = parseInt(imageDecision); return !isNaN(idx) && images[idx] ? images[idx] : null })()
@@ -99,35 +68,39 @@ export async function POST(req: NextRequest) {
 
   const now = Timestamp.now()
 
-  // Save AI text reply (await — ensures it's in Firestore before we return)
-  await db.collection('personas').doc(persona_id).collection('messages').add({
-    role: 'assistant',
-    content: replyText,
-    message_type: 'text',
-    is_auto_message: false,
-    created_at: now,
-  })
+  // 各バブルを個別メッセージとして保存し、IDを収集
+  const savedBubbles: Array<{ id: string; text: string }> = []
+  for (const text of bubbleTexts) {
+    const ref = await db.collection('personas').doc(persona_id).collection('messages').add({
+      role: 'assistant',
+      content: text,
+      message_type: 'text',
+      is_auto_message: false,
+      created_at: Timestamp.now(),
+    })
+    savedBubbles.push({ id: ref.id, text })
+  }
 
-  // Fire-and-forget: save optional image message, update image send count, update persona
+  let savedImage: { id: string; url: string } | null = null
   if (imageToSend) {
-    db.collection('personas').doc(persona_id).collection('messages').add({
+    const ref = await db.collection('personas').doc(persona_id).collection('messages').add({
       role: 'assistant',
       content: null,
       image_url: imageToSend.public_url,
       message_type: 'image',
       is_auto_message: false,
       created_at: Timestamp.now(),
-    }).catch(() => {})
-
+    })
+    savedImage = { id: ref.id, url: imageToSend.public_url }
     db.collection('personas').doc(persona_id).collection('images').doc(imageToSend.id).update({
       send_count: (imageToSend.send_count ?? 0) + 1,
     }).catch(() => {})
   }
 
-  db.collection('personas').doc(persona_id).update({ updated_at: Timestamp.now() }).catch(() => {})
+  db.collection('personas').doc(persona_id).update({ updated_at: now }).catch(() => {})
 
   return NextResponse.json({
-    reply: replyText,
-    image: imageToSend ? { url: imageToSend.public_url } : null,
+    bubbles: savedBubbles,
+    image: savedImage,
   })
 }

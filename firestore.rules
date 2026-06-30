@@ -1,8 +1,34 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
+
+    match /personas/{personaId} {
+      allow read: if true;
+      allow write: if false;
+
+      match /messages/{messageId} {
+        allow read: if true;
+        allow create: if request.resource.data.role == 'user'
+                      && request.resource.data.message_type == 'text';
+        allow update, delete: if false;
+      }
+
+      match /uploads/{uploadId} {
+        allow read: if true;
+        allow write: if false;
+      }
+
+      match /images/{imageId} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+
+    match /push_subscriptions/{subId} {
+      allow read: if false;
+      allow create: if request.resource.data.keys is map
+                    && request.resource.data.endpoint is string;
+      allow update, delete: if false;
     }
   }
 }

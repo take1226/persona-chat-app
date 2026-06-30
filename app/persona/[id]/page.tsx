@@ -2,7 +2,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { db } from '@/lib/firebase'
-import { collection, query, orderBy, onSnapshot, doc, getDoc, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore'
+import { collection, query, orderBy, onSnapshot, doc, onSnapshot as onSnapDoc, addDoc, serverTimestamp, Timestamp } from 'firebase/firestore'
+import TypingIndicator from '@/components/chat/TypingIndicator'
+import MessageBubble from '@/components/chat/MessageBubble'
 
 type Message = {
   id: string
@@ -33,6 +35,8 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [typing, setTyping] = useState(false)
+  const [readMsgId, setReadMsgId] = useState<string | null>(null)
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushLoading, setPushLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -42,8 +46,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (!personaId) { router.push('/'); return }
 
-    // Realtime listener on persona doc — picks up avatar_url changes from settings page
-    const unsubPersona = onSnapshot(doc(db, 'personas', personaId), (snap) => {
+    const unsubPersona = onSnapDoc(doc(db, 'personas', personaId), (snap) => {
       if (!snap.exists()) { router.push('/'); return }
       const d = snap.data() as { name: string; avatar_url?: string; auto_message_enabled: boolean }
       setPersona({ id: snap.id, name: d.name, avatar_url: d.avatar_url, auto_message_enabled: d.auto_message_enabled })
@@ -85,7 +88,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, typing])
 
   const enablePush = useCallback(async () => {
     setPushLoading(true)
@@ -123,29 +126,66 @@ export default function ChatPage() {
     const text = input.trim()
     setInput('')
     setSending(true)
+    setTyping(true)
 
     let savedMsgId: string | null = null
     try {
-      // Save user message directly from client → get real Firestore ID immediately
       const ref = await addDoc(
         collection(db, 'personas', personaId, 'messages'),
         { role: 'user', content: text, message_type: 'text', is_auto_message: false, created_at: serverTimestamp() }
       )
       savedMsgId = ref.id
-      // Register real ID so onSnapshot skips it (prevents duplicate)
       messageIdsRef.current.add(savedMsgId)
-      // Show message immediately with the real Firestore ID
-      setMessages(prev => [...prev, { id: savedMsgId!, role: 'user', content: text, message_type: 'text', created_at: new Date().toISOString() }])
+      setMessages(prev => [...prev, {
+        id: savedMsgId!, role: 'user', content: text,
+        message_type: 'text', created_at: new Date().toISOString(),
+      }])
 
-      // Call API — AI reply is saved to Firestore by the API, onSnapshot picks it up
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ persona_id: personaId, user_message: text }),
       })
       if (!res.ok) throw new Error(`API error: ${res.status}`)
+
+      const data = await res.json() as {
+        bubbles: Array<{ id: string; text: string }>
+        image: { id: string; url: string } | null
+      }
+
+      // 既読をユーザーの最後メッセージに付与
+      if (savedMsgId) setReadMsgId(savedMsgId)
+
+      // バブルをIDで事前登録（onSnapshot での重複防止）
+      const allIds = [...data.bubbles.map(b => b.id), data.image?.id].filter(Boolean) as string[]
+      allIds.forEach(id => messageIdsRef.current.add(id))
+
+      // タイピング演出付きで順次表示
+      for (const bubble of data.bubbles) {
+        await sleep(400 + Math.random() * 500)
+        setTyping(false)
+        const msg: Message = {
+          id: bubble.id, role: 'assistant', content: bubble.text,
+          message_type: 'text', created_at: new Date().toISOString(),
+        }
+        setMessages(prev => [...prev, msg])
+        if (data.bubbles.indexOf(bubble) < data.bubbles.length - 1) {
+          await sleep(200)
+          setTyping(true)
+        }
+      }
+
+      if (data.image) {
+        await sleep(400 + Math.random() * 400)
+        setTyping(false)
+        setMessages(prev => [...prev, {
+          id: data.image!.id, role: 'assistant', content: null,
+          message_type: 'image', image_url: data.image!.url, created_at: new Date().toISOString(),
+        }])
+      }
     } catch (err) {
       console.error('Send failed:', err)
+      setTyping(false)
       if (savedMsgId) {
         messageIdsRef.current.delete(savedMsgId)
         setMessages(prev => prev.filter(m => m.id !== savedMsgId))
@@ -155,6 +195,7 @@ export default function ChatPage() {
     } finally {
       sendingRef.current = false
       setSending(false)
+      setTyping(false)
     }
   }
 
@@ -167,26 +208,27 @@ export default function ChatPage() {
   }
 
   const initials = persona.name.charAt(0).toUpperCase()
+  const avatarNode = (
+    <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#06c755', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#fff', fontWeight: '600', flexShrink: 0 }}>
+      {persona.avatar_url
+        ? <img src={persona.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+        : initials}
+    </div>
+  )
+
   const s = {
     container: { display: 'flex', flexDirection: 'column' as const, height: '100dvh', background: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif' },
     header: { background: '#fff', borderBottom: '1px solid #e5e5ea', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 },
-    backBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 6px 4px 0', color: '#00b900', lineHeight: 1 },
-    avatar: { width: 40, height: 40, borderRadius: '50%', background: '#00b900', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#fff', fontWeight: '600', flexShrink: 0 },
+    backBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 6px 4px 0', color: '#06c755', lineHeight: 1 },
+    avatar: { width: 40, height: 40, borderRadius: '50%', background: '#06c755', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#fff', fontWeight: '600', flexShrink: 0 },
     headerInfo: { flex: 1 },
     headerName: { fontSize: 16, fontWeight: '600', margin: 0, color: '#000' },
     headerStatus: { fontSize: 12, color: '#8e8e93', margin: '2px 0 0' },
-    pushBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 6px', color: '#00b900' },
+    pushBtn: { background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', padding: '4px 6px', color: '#06c755' },
     messageList: { flex: 1, overflowY: 'auto' as const, padding: '12px 16px', display: 'flex', flexDirection: 'column' as const, gap: 6 },
-    rowThem: { display: 'flex', alignItems: 'flex-end', gap: 8 },
-    rowMe: { display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-end', gap: 4 },
-    avatarSmall: { width: 32, height: 32, borderRadius: '50%', background: '#00b900', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#fff', fontWeight: '600', flexShrink: 0 },
-    bubbleThem: { background: '#e5e5ea', color: '#000', borderRadius: '4px 16px 16px 16px', padding: '8px 12px', maxWidth: '72%', fontSize: 15, lineHeight: 1.5, wordBreak: 'break-word' as const, whiteSpace: 'pre-wrap' as const },
-    bubbleMe: { background: '#00b900', color: '#fff', borderRadius: '16px 4px 16px 16px', padding: '8px 12px', maxWidth: '72%', fontSize: 15, lineHeight: 1.5, wordBreak: 'break-word' as const, whiteSpace: 'pre-wrap' as const },
-    imageBox: { maxWidth: 200, borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(0,0,0,0.12)' },
-    ts: { fontSize: 11, color: '#8e8e93', marginTop: 3 },
     inputArea: { background: '#fff', borderTop: '1px solid #e5e5ea', padding: '8px 16px 16px', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 },
     textarea: { flex: 1, border: '1px solid #d5d5d9', borderRadius: 20, padding: '8px 14px', fontSize: 15, resize: 'none' as const, outline: 'none', minHeight: 36, maxHeight: 100, lineHeight: 1.5, fontFamily: 'inherit', background: '#fff' },
-    sendBtn: { width: 36, height: 36, borderRadius: '50%', background: '#00b900', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '600' },
+    sendBtn: { width: 36, height: 36, borderRadius: '50%', background: '#06c755', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontWeight: '600' },
     settingsBtn: { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 6px', color: '#8e8e93', lineHeight: 1 },
   }
 
@@ -201,7 +243,7 @@ export default function ChatPage() {
         </div>
         <div style={s.headerInfo}>
           <p style={s.headerName}>{persona.name}</p>
-          <p style={s.headerStatus}>AIペルソナ</p>
+          <p style={s.headerStatus}>{typing ? '入力中...' : 'AIペルソナ'}</p>
         </div>
         <button style={s.pushBtn} onClick={enablePush} disabled={pushEnabled || pushLoading} title={pushEnabled ? '通知オン' : '通知をオンにする'}>
           {pushEnabled ? '🔔' : '🔕'}
@@ -213,39 +255,20 @@ export default function ChatPage() {
 
       <div style={s.messageList}>
         {messages.map(msg => (
-          <div key={msg.id}>
-            {msg.role === 'assistant' ? (
-              <div style={s.rowThem}>
-                <div style={s.avatarSmall}>
-                  {persona.avatar_url
-                    ? <img src={persona.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                    : initials}
-                </div>
-                <div>
-                  {msg.message_type === 'image' && msg.image_url ? (
-                    <div style={s.imageBox}><img src={msg.image_url} alt="画像" style={{ width: '100%', display: 'block' }} /></div>
-                  ) : (
-                    <div style={s.bubbleThem}>{msg.content}</div>
-                  )}
-                  <p style={s.ts}>{new Date(msg.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}</p>
-                </div>
-              </div>
-            ) : (
-              <div style={s.rowMe}>
-                <p style={{ ...s.ts, marginRight: 0 }}>{new Date(msg.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}</p>
-                <div style={s.bubbleMe}>{msg.content}</div>
-              </div>
-            )}
-          </div>
+          <MessageBubble
+            key={msg.id}
+            content={msg.content}
+            imageUrl={msg.image_url}
+            role={msg.role}
+            timestamp={msg.created_at}
+            avatarNode={avatarNode}
+            showRead={msg.role === 'user' && msg.id === readMsgId}
+          />
         ))}
-        {sending && (
-          <div style={s.rowThem}>
-            <div style={s.avatarSmall}>
-              {persona.avatar_url
-                ? <img src={persona.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-                : initials}
-            </div>
-            <div style={{ ...s.bubbleThem, color: '#8e8e93' }}>入力中…</div>
+        {typing && (
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+            {avatarNode}
+            <TypingIndicator />
           </div>
         )}
         <div ref={bottomRef} />
@@ -267,6 +290,10 @@ export default function ChatPage() {
       </div>
     </div>
   )
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {

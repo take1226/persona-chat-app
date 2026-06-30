@@ -3,11 +3,28 @@ import { chat } from '@/lib/ai-client'
 import { adminDb } from '@/lib/firebase-admin'
 import { sendPushToAll } from '@/lib/push'
 import { Timestamp } from 'firebase-admin/firestore'
+import { buildSystemPrompt } from '@/lib/chat/buildSystemPrompt'
+import { validatePersonaCard } from '@/lib/persona/card'
+
+const MIN_INTERVAL_HOURS = 12
+const QUIET_HOURS_START_JST = 0  // JST 0時
+const QUIET_HOURS_END_JST = 7    // JST 7時
+const SEND_PROBABILITY = 0.6
+
+function jstHour(): number {
+  return (new Date().getUTCHours() + 9) % 24
+}
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // 深夜帯（JST 0〜7時）はスキップ
+  const hour = jstHour()
+  if (hour >= QUIET_HOURS_START_JST && hour < QUIET_HOURS_END_JST) {
+    return NextResponse.json({ ok: true, sent: 0, reason: 'quiet_hours' })
   }
 
   const db = adminDb()
@@ -19,21 +36,25 @@ export async function GET(req: NextRequest) {
 
   for (const personaDoc of personasSnap.docs) {
     const persona = personaDoc.data() as {
-      name: string; system_prompt?: string;
-      auto_message_interval_min?: number; auto_message_interval_max?: number;
-      last_auto_message_at?: Timestamp;
+      name: string
+      card?: unknown
+      raw_analysis?: unknown
+      system_prompt?: string
+      last_auto_message_at?: Timestamp
     }
 
-    const minInterval = persona.auto_message_interval_min ?? 5
-    const maxInterval = persona.auto_message_interval_max ?? 30
-
+    // 経過時間チェック（最低12時間）
     if (persona.last_auto_message_at) {
       const lastSent = persona.last_auto_message_at.toDate()
-      const diffMinutes = (now.getTime() - lastSent.getTime()) / 60000
-      if (diffMinutes < minInterval) continue
-      const probability = Math.min((diffMinutes - minInterval) / (maxInterval - minInterval), 1.0)
-      if (Math.random() > probability) continue
+      const diffHours = (now.getTime() - lastSent.getTime()) / 3600000
+      if (diffHours < MIN_INTERVAL_HOURS) continue
     }
+
+    // 乱数ゲート（機械的連投を防ぐ）
+    if (Math.random() > SEND_PROBABILITY) continue
+
+    const card = validatePersonaCard(persona.card ?? persona.raw_analysis)
+    const systemPrompt = buildSystemPrompt(card, persona.name)
 
     const recentSnap = await db
       .collection('personas').doc(personaDoc.id)
@@ -52,19 +73,22 @@ export async function GET(req: NextRequest) {
       ? Math.floor((now.getTime() - lastMsg.created_at.toDate().getTime()) / 60000)
       : 999
 
-    const systemPrompt = `${persona.system_prompt ?? `あなたは${persona.name}として振る舞ってください。`}
+    // ongoing の話題があればそこから選ぶ
+    const ongoingTopic = card.memory.ongoing.length > 0
+      ? `【今回触れる話題のヒント】: ${card.memory.ongoing[Math.floor(Math.random() * card.memory.ongoing.length)]}`
+      : ''
 
-【追加指示】
-あなたは今、相手に自分から連絡を取ろうとしています。最後のメッセージから約${minutesSince}分経っています。
-この人物らしい、自然な「自発的なメッセージ」を1〜2文で送ってください。返答は送るメッセージ本文のみ。`
+    const triggerPrompt = `今から${persona.name}として自発的にメッセージを送ります。
+最後のやりとりから約${minutesSince}分経っています。
+${ongoingTopic}
+この人らしい自然なメッセージを1〜2文で送ってください。返答は送るメッセージ本文のみ。`
 
     let autoMessage = ''
     try {
-      const trigger = history.length > 0 ? '（しばらく時間が経ちました）' : '（久しぶりに連絡します）'
-      autoMessage = await chat(systemPrompt, history, trigger, 200)
+      autoMessage = await chat(systemPrompt, history, triggerPrompt, 150)
     } catch { continue }
 
-    if (!autoMessage) continue
+    if (!autoMessage.trim()) continue
 
     await db.collection('personas').doc(personaDoc.id).collection('messages').add({
       role: 'assistant',

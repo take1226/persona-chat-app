@@ -116,12 +116,13 @@ export default function PersonaSettingsPage() {
         await fetch(isImage ? '/api/upload/image' : '/api/upload/text', { method: 'POST', body: fd }).catch(() => {})
         setImportStatus(`✅ ${file.name} 処理済み`)
       }
-      fetch('/api/persona/create', {
+      setImportStatus('🧠 人物特性を分析中...')
+      const analysisRes = await fetch('/api/persona/analyze-personality', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ persona_id: personaId, profile: { name: form.name } }),
-      }).catch(() => {})
-      setImportStatus('✅ 完了！バックグラウンドでペルソナを更新中...')
+        body: JSON.stringify({ persona_id: personaId }),
+      }).catch(() => null)
+      setImportStatus(analysisRes?.ok ? '✅ ペルソナカードを更新しました！' : '✅ アップロード完了（分析は後で「再分析」ボタンから）')
       setTimeout(() => setImportStatus(''), 3000)
     } catch {
       setImportStatus('⚠️ 一部エラーがありましたが処理を続けました')
