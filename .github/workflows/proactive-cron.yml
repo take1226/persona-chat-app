@@ -1,16 +1,16 @@
 name: Proactive Message Cron
 
+# スケジュール実行は Vercel ネイティブ cron (vercel.json) に移管済み。
+# Vercel cron は deployment protection を素通りするため外部 HTTP 認証不要。
+# このワークフローは手動検証・デバッグ専用として残す。
 on:
-  schedule:
-    # 15分ごと (UTC) — GitHub Actions の最小単位
-    - cron: '*/15 * * * *'
   workflow_dispatch: {}
 
-# 必要な GitHub Secrets（リポジトリ Settings → Secrets → Actions で設定）
-# - CRON_SECRET      : Vercel 環境変数の CRON_SECRET と同じ値
-# - APP_URL          : Vercel 本番 URL（例: https://persona-chat-app-t-s-projects10.vercel.app）
-# - VERCEL_BYPASS_TOKEN: Vercel ダッシュボード → Project Settings → Deployment Protection
-#                      → "Protection Bypass for Automation" で発行したトークン
+# 必要な GitHub Secrets (Settings → Secrets → Actions):
+#   CRON_SECRET      - Vercel 環境変数 CRON_SECRET と同じ値
+#   APP_URL          - https://persona-chat-app-t-s-projects10.vercel.app
+#   VERCEL_BYPASS_TOKEN - Vercel ダッシュボード → Deployment Protection
+#                        → Protection Bypass for Automation で発行
 
 jobs:
   trigger:
@@ -29,7 +29,7 @@ jobs:
           cat /tmp/response_body.txt || true
           if [ "$STATUS" != "200" ]; then
             echo "::error::Endpoint returned HTTP $STATUS — expected 200."
-            echo "Hint: if 302, enable Protection Bypass in Vercel and set VERCEL_BYPASS_TOKEN secret."
-            echo "Hint: if 401, ensure CRON_SECRET matches the value set in Vercel env vars."
+            echo "Hint: if 302, set VERCEL_BYPASS_TOKEN (Vercel → Deployment Protection → Bypass for Automation)."
+            echo "Hint: if 401, ensure CRON_SECRET in Vercel env vars matches the GitHub Secret value."
             exit 1
           fi
