@@ -6,12 +6,30 @@ on:
     - cron: '*/15 * * * *'
   workflow_dispatch: {}
 
+# 必要な GitHub Secrets（リポジトリ Settings → Secrets → Actions で設定）
+# - CRON_SECRET      : Vercel 環境変数の CRON_SECRET と同じ値
+# - APP_URL          : Vercel 本番 URL（例: https://persona-chat-app-t-s-projects10.vercel.app）
+# - VERCEL_BYPASS_TOKEN: Vercel ダッシュボード → Project Settings → Deployment Protection
+#                      → "Protection Bypass for Automation" で発行したトークン
+
 jobs:
   trigger:
     runs-on: ubuntu-latest
     steps:
       - name: Call send-scheduled endpoint
         run: |
-          curl -s -o /dev/null -w "%{http_code}" \
+          STATUS=$(curl -s \
+            -o /tmp/response_body.txt \
+            -w "%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.APP_URL }}/api/push/send-scheduled"
+            -H "x-vercel-protection-bypass: ${{ secrets.VERCEL_BYPASS_TOKEN }}" \
+            "${{ secrets.APP_URL }}/api/push/send-scheduled")
+          echo "HTTP status: $STATUS"
+          echo "Response body:"
+          cat /tmp/response_body.txt || true
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Endpoint returned HTTP $STATUS — expected 200."
+            echo "Hint: if 302, enable Protection Bypass in Vercel and set VERCEL_BYPASS_TOKEN secret."
+            echo "Hint: if 401, ensure CRON_SECRET matches the value set in Vercel env vars."
+            exit 1
+          fi
